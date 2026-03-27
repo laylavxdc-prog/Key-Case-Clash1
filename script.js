@@ -24,31 +24,22 @@ const KNIVES = [
   { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png' },
 ];
 
-const RARITY_COLORS = {
-  common:    0x9e9e9e,
-  uncommon:  0x4caf50,
-  rare:      0x2196f3,
-  epic:      0x9c27b0,
-  legendary: 0xff9800,
-  mythical:  0xf44336,
-  celestial: 0xffeb3b,
-};
-
 const ITEM_W       = 110;
 const ITEM_GAP     = 10;
 const ITEM_TOTAL   = ITEM_W + ITEM_GAP;
 const STRIP_COUNT  = 60;
 const WINNER_IDX   = 45;
 const CASE_COST    = 10;
-const STARTER_KEYS = 100;
+const STARTER_KEYS = 0;   // All new accounts start with 0 keys. Admins add keys.
 
 /* ═══════════════════════════════════════
    STATE
 ═══════════════════════════════════════ */
-let currentUser     = null;   // Firebase Auth user
-let currentProfile  = null;   // Firestore profile { username, keys, inventory }
+let currentUser     = null;
+let currentProfile  = null;
 let isSpinning      = false;
 let selectedItemIds = new Set();
+let adminLog        = [];
 
 /* ═══════════════════════════════════════
    FIREBASE — lazy dynamic import
@@ -82,7 +73,6 @@ async function getProfile(username) {
 async function saveProfile(profile) {
   const { db, storeMod: { doc, setDoc } } = await getFirebase();
   await setDoc(doc(db, 'users', profile.username), profile);
-  console.log('Inventory updated');
 }
 
 /* ═══════════════════════════════════════
@@ -116,7 +106,6 @@ async function handleLogin(e) {
   try {
     const { auth, authMod: { signInWithEmailAndPassword } } = await getFirebase();
     await signInWithEmailAndPassword(auth, toEmail(username), password);
-    // onAuthStateChanged handles the rest
   } catch(err) {
     errEl.textContent = friendlyAuthError(err.code);
     console.error(err);
@@ -138,18 +127,20 @@ async function handleRegister(e) {
   btn.disabled = true;
   btn.textContent = 'CREATING...';
   try {
-    const { auth, db, authMod: { createUserWithEmailAndPassword }, storeMod: { doc, getDoc } } = await getFirebase();
-    // Check username is not already taken
-    const { getFirebase: _g, ..._ } = { getFirebase };
+    const { auth, authMod: { createUserWithEmailAndPassword } } = await getFirebase();
+
+    // Check username not taken
     const existing = await getProfile(username);
     if (existing) { errEl.textContent = 'Username already taken.'; return; }
 
-    await createUserWithEmailAndPassword(auth, toEmail(username), password);
-    // Create Firestore profile
-    const profile = { username, keys: STARTER_KEYS, inventory: [] };
+    // Save the Firestore profile FIRST — before creating the auth user.
+    // This way when onAuthStateChanged fires it finds the profile immediately.
+    const profile = { username, keys: STARTER_KEYS, inventory: [], isAdmin: false };
     await saveProfile(profile);
-    console.log('User registered:', username);
-    // onAuthStateChanged handles the rest
+
+    // Now create the Firebase Auth account
+    await createUserWithEmailAndPassword(auth, toEmail(username), password);
+    // onAuthStateChanged takes over from here
   } catch(err) {
     errEl.textContent = friendlyAuthError(err.code);
     console.error(err);
@@ -179,10 +170,12 @@ async function logout() {
   currentProfile = null;
   isSpinning     = false;
   selectedItemIds.clear();
+  adminLog = [];
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('ntab-admin').classList.add('hidden');
   showAuthTab('login');
 }
 
@@ -191,16 +184,13 @@ async function logout() {
 ═══════════════════════════════════════ */
 async function onUserLoggedIn(firebaseUser) {
   currentUser = firebaseUser;
-  // Derive username from email (strip @game.com)
   const username = firebaseUser.email.replace('@game.com', '');
-  // Load or create Firestore profile
+
   let profile = await getProfile(username);
   if (!profile) {
-    profile = { username, keys: STARTER_KEYS, inventory: [] };
+    // Fallback: profile wasn't pre-created (edge case), create it now
+    profile = { username, keys: STARTER_KEYS, inventory: [], isAdmin: false };
     await saveProfile(profile);
-    console.log('User registered:', username);
-  } else {
-    console.log('User logged in:', username);
   }
   currentProfile = profile;
 
@@ -208,10 +198,19 @@ async function onUserLoggedIn(firebaseUser) {
   document.getElementById('game-screen').classList.remove('hidden');
   document.getElementById('username-display').textContent = username;
   updateKeysDisplay(profile.keys);
+
+  // Show admin tab only for admins
+  const adminBtn = document.getElementById('ntab-admin');
+  if (profile.isAdmin) {
+    adminBtn.classList.remove('hidden');
+  } else {
+    adminBtn.classList.add('hidden');
+  }
+
   initPossibleDrops();
   buildInitialReel();
   switchTab('case');
-  console.log('Inventory loaded:', profile.inventory.length, 'items');
+  console.log('Logged in:', username, '| Keys:', profile.keys, '| Admin:', !!profile.isAdmin);
 }
 
 function updateKeysDisplay(keys) {
@@ -223,12 +222,14 @@ function updateKeysDisplay(keys) {
    TABS
 ═══════════════════════════════════════ */
 function switchTab(tab) {
-  ['case', 'inventory'].forEach(t => {
-    document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tab);
+  ['case', 'inventory', 'admin'].forEach(t => {
+    const panel = document.getElementById(`tab-${t}`);
+    if (panel) panel.classList.toggle('hidden', t !== tab);
     const btn = document.getElementById(`ntab-${t}`);
     if (btn) btn.classList.toggle('active', t === tab);
   });
   if (tab === 'inventory') renderInventory();
+  if (tab === 'admin')     renderAdminLog();
 }
 
 /* ═══════════════════════════════════════
@@ -250,6 +251,7 @@ function initPossibleDrops() {
    REEL
 ═══════════════════════════════════════ */
 function randomKnife() {
+  // Perfectly fair: each of the 7 knives has exactly 1/7 chance
   return KNIVES[Math.floor(Math.random() * KNIVES.length)];
 }
 
@@ -325,7 +327,6 @@ function playWinSound(rarity) {
     notes.forEach((f, i) => osc(f, 'sine', ctx.currentTime + i * 0.13, 0.45, 0.18, ctx));
   } catch(e) {}
 }
-
 function scheduleTickSounds() {
   const DURATION = 6000;
   let t = 0, interval = 28;
@@ -343,7 +344,7 @@ function scheduleTickSounds() {
 async function openCase() {
   if (isSpinning || !currentProfile) return;
   if (currentProfile.keys < CASE_COST) {
-    alert("You don't have enough keys!");
+    alert("You don't have enough keys! Ask an admin to add keys to your account.");
     return;
   }
 
@@ -353,7 +354,6 @@ async function openCase() {
   btn.textContent = 'SPINNING...';
 
   const winner = randomKnife();
-  console.log('Item won:', winner.name, '(' + winner.rarity + ')');
 
   currentProfile.keys -= CASE_COST;
   const item = {
@@ -399,10 +399,10 @@ async function openCase() {
    WIN MODAL
 ═══════════════════════════════════════ */
 function showWinModal(knife) {
-  document.getElementById('win-img').src   = knife.image;
-  document.getElementById('win-img').alt   = knife.name;
-  document.getElementById('win-name').textContent      = knife.name;
-  document.getElementById('win-coins').textContent     = `🪙 ${knife.value} Coins`;
+  document.getElementById('win-img').src           = knife.image;
+  document.getElementById('win-img').alt           = knife.name;
+  document.getElementById('win-name').textContent  = knife.name;
+  document.getElementById('win-coins').textContent = `🪙 ${knife.value} Coins`;
   document.getElementById('win-keys-left').textContent = `🗝️ ${currentProfile.keys} keys remaining`;
   const badge = document.getElementById('win-badge');
   badge.textContent = knife.rarity;
@@ -461,7 +461,6 @@ function updateWithdrawBar() {
   const total = (currentProfile?.inventory || [])
     .filter(i => selectedItemIds.has(i.id))
     .reduce((s, i) => s + i.value, 0);
-
   document.getElementById('sel-count').textContent = `${count} selected`;
   document.getElementById('sel-value').textContent = `${total} 🪙`;
   bar.classList.toggle('hidden', count === 0);
@@ -475,7 +474,6 @@ async function withdraw() {
   btn.disabled = true;
   btn.textContent = 'SENDING...';
 
-  // Build Discord embed
   const totalVal = toWithdraw.reduce((s, i) => s + i.value, 0);
   const fields   = toWithdraw.map(i => ({
     name:   i.name,
@@ -484,7 +482,7 @@ async function withdraw() {
   }));
 
   const embed = {
-    title:       `🎮 Withdrawal Request — ${currentProfile.username}`,
+    title:       `🎮 Withdrawal — ${currentProfile.username}`,
     description: `**${toWithdraw.length}** item(s) worth **${totalVal} 🪙 coins**`,
     color:       0xffd700,
     fields,
@@ -497,13 +495,10 @@ async function withdraw() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ embeds: [embed] }),
     });
+    if (!res.ok) throw new Error(`Discord ${res.status}`);
 
-    if (!res.ok) throw new Error(`Discord responded ${res.status}`);
-
-    // Remove withdrawn items from inventory
     currentProfile.inventory = currentProfile.inventory.filter(i => !selectedItemIds.has(i.id));
     await saveProfile(currentProfile);
-
     selectedItemIds.clear();
     renderInventory();
     alert(`✅ Withdrawal sent! ${toWithdraw.length} item(s) submitted.`);
@@ -514,6 +509,76 @@ async function withdraw() {
     btn.disabled = false;
     btn.textContent = '🎮 WITHDRAW';
   }
+}
+
+/* ═══════════════════════════════════════
+   ADMIN
+═══════════════════════════════════════ */
+async function adminAddKeys() {
+  if (!currentProfile?.isAdmin) return;
+
+  const targetUser = document.getElementById('admin-target-user').value.trim().toLowerCase();
+  const amount     = parseInt(document.getElementById('admin-keys-amount').value, 10);
+  const errEl      = document.getElementById('admin-err');
+  const successEl  = document.getElementById('admin-success');
+
+  errEl.textContent = '';
+  successEl.classList.add('hidden');
+
+  if (!targetUser) { errEl.textContent = 'Enter a username.'; return; }
+  if (!amount || amount < 1) { errEl.textContent = 'Enter a valid number of keys (min 1).'; return; }
+
+  const btn = document.querySelector('#tab-admin .btn-auth');
+  btn.disabled = true;
+  btn.textContent = 'ADDING...';
+
+  try {
+    const profile = await getProfile(targetUser);
+    if (!profile) {
+      errEl.textContent = `User "${targetUser}" not found.`;
+      return;
+    }
+
+    profile.keys = (profile.keys || 0) + amount;
+    await saveProfile(profile);
+
+    const entry = {
+      time:   new Date().toLocaleString(),
+      admin:  currentProfile.username,
+      target: targetUser,
+      amount,
+      newTotal: profile.keys,
+    };
+    adminLog.unshift(entry);
+
+    successEl.textContent = `✅ Added ${amount} keys to ${targetUser}. They now have ${profile.keys} keys.`;
+    successEl.classList.remove('hidden');
+    document.getElementById('admin-target-user').value  = '';
+    document.getElementById('admin-keys-amount').value  = '';
+    renderAdminLog();
+    console.log('Admin added keys:', entry);
+  } catch(err) {
+    errEl.textContent = 'Failed to add keys. Try again.';
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'ADD KEYS';
+  }
+}
+
+function renderAdminLog() {
+  const el = document.getElementById('admin-log');
+  if (!el) return;
+  if (adminLog.length === 0) {
+    el.innerHTML = '<div class="empty-msg" style="font-size:13px;padding:12px 0;">No actions yet this session.</div>';
+    return;
+  }
+  el.innerHTML = adminLog.map(e => `
+    <div class="admin-log-entry">
+      <span class="al-time">${e.time}</span>
+      <span class="al-text">Added <strong>${e.amount}</strong> keys to <strong>${e.target}</strong> → now <strong>${e.newTotal}</strong> keys</span>
+    </div>
+  `).join('');
 }
 
 /* ═══════════════════════════════════════
