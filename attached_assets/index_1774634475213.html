@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KnifeCase</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-particles"></div>
+  <div class="auth-box">
+    <img src="logo.png" alt="KnifeCase" class="auth-logo" />
+    <div class="auth-tabs">
+      <button id="atab-login" class="atab active" onclick="showAuthTab('login')">LOGIN</button>
+      <button id="atab-register" class="atab" onclick="showAuthTab('register')">REGISTER</button>
+    </div>
+
+    <form id="login-form" class="aform" onsubmit="handleLogin(event)">
+      <div class="field">
+        <label>USERNAME</label>
+        <input type="text" id="login-user" placeholder="Enter your username" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label>PASSWORD</label>
+        <input type="password" id="login-pass" placeholder="Enter your password" autocomplete="current-password" required />
+      </div>
+      <div class="aerr" id="login-err"></div>
+      <button type="submit" class="btn-auth">LOGIN</button>
+    </form>
+
+    <form id="register-form" class="aform hidden" onsubmit="handleRegister(event)">
+      <div class="field">
+        <label>USERNAME</label>
+        <input type="text" id="reg-user" placeholder="Choose a username (3+ chars)" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label>PASSWORD</label>
+        <input type="password" id="reg-pass" placeholder="Choose a password (6+ chars)" autocomplete="new-password" required />
+      </div>
+      <div class="aerr" id="reg-err"></div>
+      <button type="submit" class="btn-auth">CREATE ACCOUNT</button>
+      <p class="anote">Start with 0 keys — ask an admin for keys!</p>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════ GAME SCREEN ═══════════════ -->
+<div id="game-screen" class="hidden">
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <img src="logo.png" alt="KnifeCase" class="nav-logo" />
+    <div class="nav-tabs">
+      <button class="ntab active" id="ntab-case" onclick="switchTab('case')">🗡️ CASE</button>
+      <button class="ntab" id="ntab-inventory" onclick="switchTab('inventory')">🎒 INVENTORY</button>
+      <button class="ntab admin-only hidden" id="ntab-admin" onclick="switchTab('admin')">⚙️ ADMIN</button>
+    </div>
+    <div class="nav-right">
+      <div class="keys-badge">
+        <span class="kb-icon">🗝️</span>
+        <span id="keys-count">0</span>
+        <span class="kb-label">KEYS</span>
+      </div>
+      <div class="user-badge">
+        <span>👤</span>
+        <span id="username-display"></span>
+      </div>
+      <button class="btn-logout" onclick="logout()">OUT</button>
+    </div>
+  </nav>
+
+  <!-- ─── CASE TAB ─── -->
+  <div id="tab-case" class="gtab">
+    <div class="case-hero">
+      <div class="case-hero-img-wrap">
+        <img src="case-killer.png" alt="Killer Case" class="case-hero-img" id="case-hero-img" />
+        <div class="case-hero-glow"></div>
+      </div>
+      <div class="case-hero-info">
+        <h1 class="case-hero-title">KILLER CASE</h1>
+        <p class="case-hero-sub">One spin. One blade. Claim your fate.</p>
+        <div class="case-hero-cost"><span>🗝️</span> 10 keys per open</div>
+      </div>
+    </div>
+
+    <!-- SPINNING REEL -->
+    <div class="reel-section">
+      <div class="reel-frame">
+        <div class="reel-center-line"></div>
+        <div class="reel-center-arrow-top">▼</div>
+        <div class="reel-center-arrow-bot">▲</div>
+        <div class="reel-viewport" id="reel-viewport">
+          <div class="reel-strip" id="reel-strip"></div>
+        </div>
+        <div class="reel-fade-l"></div>
+        <div class="reel-fade-r"></div>
+      </div>
+      <div class="reel-controls">
+        <button class="btn-spin" id="open-btn" onclick="openCase()">
+          <span class="spin-icon">⚡</span> OPEN CASE
+        </button>
+      </div>
+    </div>
+
+    <!-- POSSIBLE DROPS -->
+    <div class="possible-section">
+      <h3 class="section-label">POSSIBLE DROPS — ALL EQUAL CHANCE</h3>
+      <div class="possible-grid" id="possible-grid"></div>
+    </div>
+  </div>
+
+  <!-- ─── INVENTORY TAB ─── -->
+  <div id="tab-inventory" class="gtab hidden">
+    <div class="inv-topbar">
+      <h2 class="section-label">YOUR INVENTORY</h2>
+      <span id="inv-total-count" class="inv-count-badge">0 items</span>
+    </div>
+    <div id="inventory-grid" class="inv-grid">
+      <div class="empty-msg">No items yet. Open a case to get started!</div>
+    </div>
+    <div id="withdraw-bar" class="withdraw-bar hidden">
+      <div class="wb-left">
+        <span id="sel-count" class="wb-count">0 selected</span>
+        <span class="wb-sep">•</span>
+        <span id="sel-robux" class="wb-val">0 Robux</span>
+      </div>
+      <button class="btn-withdraw" onclick="withdraw()">🎮 WITHDRAW TO ROBUX</button>
+    </div>
+  </div>
+
+  <!-- ─── ADMIN TAB ─── -->
+  <div id="tab-admin" class="gtab hidden">
+    <div class="admin-panel">
+      <h2 class="section-label">⚙️ ADMIN PANEL</h2>
+      <p class="admin-sub">Manage player keys</p>
+      <div id="users-list" class="users-list">
+        <div class="loading-msg">Loading users...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════ WIN MODAL ═══════════════ -->
+<div id="win-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-card">
+    <div class="modal-glow" id="modal-glow"></div>
+    <div class="modal-win-label">YOU WON!</div>
+    <img id="win-img" src="" alt="" class="modal-knife" />
+    <div id="win-name" class="modal-name"></div>
+    <div id="win-badge" class="rarity-badge modal-badge"></div>
+    <div id="win-coins" class="modal-coins"></div>
+    <div id="win-keys-left" class="modal-keys-left"></div>
+    <button class="btn-claim" onclick="closeModal()">CLAIM ITEM</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
