@@ -1,0 +1,56 @@
+My Replit project is not showing updates from my index.html file. When I edit index.html, nothing changes on the live site, so the wrong file is being served.
+
+Please do ALL of the following:
+
+1. Find which HTML file is actually being served as the main entry point.
+2. Fix the project so that editing the correct index.html updates the live site.
+3. If the project uses a "public", "dist", or "build" folder, make sure the correct index.html is used.
+4. Remove any incorrect server configuration or caching that prevents updates.
+5. Ensure the site reloads properly and reflects changes immediately.
+
+Then, AFTER fixing that:
+
+6. Add Firebase to the correct HTML file using CDN (not npm).
+7. Insert this Firebase script right before the closing </body> tag:
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+  import { getFirestore, collection, addDoc } 
+  from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
+    authDomain: "case-clash.firebaseapp.com",
+    projectId: "case-clash",
+    storageBucket: "case-clash.firebasestorage.app",
+    messagingSenderId: "251214048625",
+    appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  console.log("🔥 Firebase connected");
+
+  async function testWrite() {
+    try {
+      const docRef = await addDoc(collection(db, "battles"), {
+        name: "Test Battle",
+        created: Date.now()
+      });
+      console.log("🔥 Battle created:", docRef.id);
+    } catch (e) {
+      console.error("❌ Firebase error:", e);
+    }
+  }
+
+  testWrite();
+</script>
+
+8. Add a visible test line at the top of the page:
+
+<h1 style="color:red;">REPLIT + FIREBASE WORKING</h1>
+
+So I can confirm everything is fixed.
+
+Make sure there are no JavaScript errors and everything runs correctly in the browser.

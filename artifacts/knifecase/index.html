@@ -10,6 +10,8 @@
 </head>
 <body>
 
+<h1 style="color:red;">REPLIT + FIREBASE WORKING</h1>
+
 <!-- ═══════════════ AUTH SCREEN ═══════════════ -->
 <div id="auth-screen" class="auth-screen">
   <div class="auth-particles"></div>
@@ -162,5 +164,39 @@
 </div>
 
 <script src="script.js"></script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+  import { getFirestore, collection, addDoc }
+  from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
+    authDomain: "case-clash.firebaseapp.com",
+    projectId: "case-clash",
+    storageBucket: "case-clash.firebasestorage.app",
+    messagingSenderId: "251214048625",
+    appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  console.log("🔥 Firebase connected");
+
+  async function testWrite() {
+    try {
+      const docRef = await addDoc(collection(db, "battles"), {
+        name: "Test Battle",
+        created: Date.now()
+      });
+      console.log("🔥 Battle created:", docRef.id);
+    } catch (e) {
+      console.error("❌ Firebase error:", e);
+    }
+  }
+
+  testWrite();
+</script>
 </body>
 </html>

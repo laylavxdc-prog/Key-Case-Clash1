@@ -10,62 +10,35 @@
 </head>
 <body>
 
-<h1>KnifeCase Running 🔥</h1>
+<!-- 🔥 VERY OBVIOUS TEST -->
+<h1 style="color:red; font-size:40px;">THIS IS THE NEW VERSION</h1>
 
-<!-- YOUR SITE CONTENT (shortened for now just to test console) -->
-
-<!-- WIN MODAL -->
-<div id="win-modal" class="modal hidden">
-  <div class="modal-backdrop" onclick="closeModal()"></div>
-  <div class="modal-card">
-    <div class="modal-glow" id="modal-glow"></div>
-    <div class="modal-win-label">YOU WON!</div>
-    <img id="win-img" src="" alt="" class="modal-knife" />
-    <div id="win-name" class="modal-name"></div>
-    <div id="win-badge" class="rarity-badge modal-badge"></div>
-    <div id="win-coins" class="modal-coins"></div>
-    <div id="win-keys-left" class="modal-keys-left"></div>
-    <button class="btn-claim" onclick="closeModal()">CLAIM ITEM</button>
+<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-box">
+    <h2>Login Test</h2>
   </div>
 </div>
 
-<!-- NORMAL SCRIPT -->
-<script src="script.js"></script>
+<!-- ═══════════════ GAME SCREEN ═══════════════ -->
+<div id="game-screen" class="hidden">
+  <h2>Game Loaded</h2>
+</div>
 
-<!-- 🔥 FIREBASE + DEBUG -->
-<script type="module">
-  console.log("🔥 Firebase script running");
+<!-- ═══════════════ WIN MODAL ═══════════════ -->
+<div id="win-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-win-label">YOU WON!</div>
+  </div>
+</div>
 
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-  import { getFirestore, collection, addDoc } 
-  from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
-    authDomain: "case-clash.firebaseapp.com",
-    projectId: "case-clash",
-    storageBucket: "case-clash.firebasestorage.app",
-    messagingSenderId: "251214048625",
-    appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  async function testWrite() {
-    try {
-      const docRef = await addDoc(collection(db, "battles"), {
-        name: "Test Battle",
-        created: Date.now()
-      });
-      console.log("🔥 Battle created:", docRef.id);
-    } catch (e) {
-      console.error("❌ Error:", e);
-    }
-  }
-
-  testWrite();
+<!-- 🔥 DEBUG LOG FIRST (before script.js) -->
+<script>
+  console.log("✅ MY CODE IS RUNNING");
 </script>
+
+<!-- YOUR NORMAL SCRIPT -->
+<script src="script.js"></script>
 
 </body>
 </html>
