@@ -6,13 +6,13 @@
 const API = '/api';
 
 const KNIVES = [
-  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: '/knife-rusty.png' },
-  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: '/knife-forest.png' },
-  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  image: '/knife-crimson.png' },
-  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  image: '/knife-shadow.png' },
-  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  image: '/knife-golden.png' },
-  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  image: '/knife-void.png' },
-  { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: '/knife-celestial.png' },
+  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
+  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
+  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  image: 'knife-crimson.png' },
+  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  image: 'knife-shadow.png' },
+  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  image: 'knife-golden.png' },
+  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  image: 'knife-void.png' },
+  { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png' },
 ];
 
 const ITEM_W  = 110;
@@ -390,7 +390,7 @@ async function loadInventory() {
 
     grid.innerHTML = inventoryData.map(item => {
       const knife = KNIVES.find(k => k.name === item.itemName);
-      const img = knife ? knife.image : '/knife-rusty.png';
+      const img = knife ? knife.image : 'knife-rusty.png';
       return `
         <div class="icard inv-item rarity-${item.rarity}" data-id="${item.id}" data-val="${item.value}" onclick="toggleInvItem(this)">
           <div class="sel-overlay"><span class="sel-check">✓</span></div>
