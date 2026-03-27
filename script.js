@@ -1,53 +1,31 @@
 'use strict';
 
 /* ═══════════════════════════════════════
-   KNIVES CONFIG
+   CONFIG
 ═══════════════════════════════════════ */
+const API = '/api';
+
 const KNIVES = [
-  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   emoji: '🗡️' },
-  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  emoji: '🔪' },
-  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  emoji: '🔪' },
-  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  emoji: '⚔️' },
-  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  emoji: '🗡️' },
-  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  emoji: '🗡️' },
-  { name: 'Celestial Knife', rarity: 'celestial', value: 100, emoji: '✨' },
+  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
+  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
+  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  image: 'knife-crimson.png' },
+  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  image: 'knife-shadow.png' },
+  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  image: 'knife-golden.png' },
+  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  image: 'knife-void.png' },
+  { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png' },
 ];
 
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1486783614388666448/yTR9D5E-hSwzP2Yn2am1ig81dWMDrDpCzlS-yXTTH_OrX3xvw-j4C4QDWuSgk9FFpBDN';
-
-const CASE_COST   = 10;
-const ITEM_W      = 108;
-const ITEM_GAP    = 10;
-const ITEM_TOTAL  = ITEM_W + ITEM_GAP;
+const ITEM_W  = 110;
+const ITEM_GAP = 10;
+const ITEM_TOTAL = ITEM_W + ITEM_GAP;
 const STRIP_COUNT = 60;
 const WINNER_IDX  = 45;
 
 /* ═══════════════════════════════════════
-   STORAGE HELPERS
+   STATE
 ═══════════════════════════════════════ */
-const ADMIN_PW_HASH = btoa('KnifeAdmin123' + 'kc_salt_2024');
-
-function hashPw(pw) { return btoa(pw + 'kc_salt_2024'); }
-
-function loadUsers()     { return JSON.parse(localStorage.getItem('kc_users')     || '[]'); }
-function loadInventory() { return JSON.parse(localStorage.getItem('kc_inventory') || '[]'); }
-function saveUsers(u)    { localStorage.setItem('kc_users', JSON.stringify(u)); }
-function saveInventory(i){ localStorage.setItem('kc_inventory', JSON.stringify(i)); }
-function genId()         { return Date.now() + Math.floor(Math.random() * 10000); }
-
-function ensureAdmin() {
-  const users = loadUsers();
-  if (!users.find(u => u.username === 'admin')) {
-    users.unshift({ id: 1, username: 'admin', password: ADMIN_PW_HASH, keys: 999999, isAdmin: true });
-    saveUsers(users);
-  }
-}
-
-/* ═══════════════════════════════════════
-   SESSION STATE
-═══════════════════════════════════════ */
-let currentUser    = null;
-let isSpinning     = false;
+let currentUser = null;
+let isSpinning  = false;
 let selectedInvIds = new Set();
 let inventoryData  = [];
 
@@ -60,22 +38,27 @@ function getCtx() {
   return audioCtx;
 }
 
-function note(freq, type, start, dur, vol, ctx) {
-  const o = ctx.createOscillator(), g = ctx.createGain();
+function osc(freq, type, start, duration, volume, ctx) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
   o.connect(g); g.connect(ctx.destination);
   o.type = type || 'sine';
   o.frequency.setValueAtTime(freq, start);
   g.gain.setValueAtTime(0, start);
-  g.gain.linearRampToValueAtTime(vol, start + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  o.start(start); o.stop(start + dur + 0.01);
+  g.gain.linearRampToValueAtTime(volume, start + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  o.start(start);
+  o.stop(start + duration + 0.01);
 }
 
 function playTick(vol) {
-  try { const ctx = getCtx(); note(800, 'square', ctx.currentTime, 0.04, vol || 0.06, ctx); } catch(e) {}
+  try {
+    const ctx = getCtx();
+    osc(800, 'square', ctx.currentTime, 0.04, vol || 0.06, ctx);
+  } catch(e) {}
 }
 
-function playWin(rarity) {
+function playWinSound(rarity) {
   try {
     const ctx = getCtx();
     const scales = {
@@ -87,21 +70,28 @@ function playWin(rarity) {
       mythical:  [659, 784, 988, 1175, 1319],
       celestial: [659, 784, 988, 1175, 1319, 1568, 2093],
     };
-    (scales[rarity] || scales.common).forEach((f, i) => note(f, 'sine', ctx.currentTime + i * 0.13, 0.45, 0.18, ctx));
+    const notes = scales[rarity] || scales.common;
+    notes.forEach((f, i) => {
+      const t = ctx.currentTime + i * 0.13;
+      osc(f, 'sine', t, 0.45, 0.18, ctx);
+    });
   } catch(e) {}
 }
 
-function playCoin() {
+function playCoinSound() {
   try {
     const ctx = getCtx();
-    [1047, 1319, 1568].forEach((f, i) => note(f, 'sine', ctx.currentTime + i * 0.1, 0.3, 0.12, ctx));
+    [1047, 1319, 1568].forEach((f, i) => {
+      osc(f, 'sine', ctx.currentTime + i * 0.1, 0.3, 0.12, ctx);
+    });
   } catch(e) {}
 }
 
-function playWithdraw() {
+function playWithdrawSound() {
   try {
     const ctx = getCtx();
-    const o = ctx.createOscillator(), g = ctx.createGain();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
     o.type = 'sine';
     o.frequency.setValueAtTime(200, ctx.currentTime);
@@ -109,98 +99,88 @@ function playWithdraw() {
     g.gain.setValueAtTime(0.15, ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
     o.start(); o.stop(ctx.currentTime + 0.6);
-    setTimeout(() => { try { note(1047, 'sine', getCtx().currentTime, 0.3, 0.12, getCtx()); } catch(e) {} }, 500);
+    setTimeout(() => { try { osc(1047, 'sine', ctx.currentTime, 0.3, 0.12, ctx); } catch(e) {} }, 500);
   } catch(e) {}
 }
 
 /* ═══════════════════════════════════════
-   AUTH
+   AUTH HELPERS
 ═══════════════════════════════════════ */
 function showAuthTab(tab) {
   document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
   document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
   document.getElementById('atab-login').classList.toggle('active', tab === 'login');
   document.getElementById('atab-register').classList.toggle('active', tab === 'register');
-  document.getElementById('l-err').textContent = '';
-  document.getElementById('r-err').textContent = '';
+  document.getElementById('login-err').textContent = '';
+  document.getElementById('reg-err').textContent = '';
 }
 
-function handleLogin(e) {
+async function handleLogin(e) {
   e.preventDefault();
-  const username = document.getElementById('l-user').value.trim();
-  const password = document.getElementById('l-pass').value;
-  const errEl    = document.getElementById('l-err');
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err');
   errEl.textContent = '';
-
-  if (username === 'admin') {
-    if (hashPw(password) !== ADMIN_PW_HASH) { errEl.textContent = 'Invalid password'; return; }
-    ensureAdmin();
-    const users = loadUsers();
-    const admin = users.find(u => u.username === 'admin');
-    setUser(admin); return;
-  }
-
-  const users = loadUsers();
-  const user  = users.find(u => u.username === username && u.password === hashPw(password));
-  if (!user) { errEl.textContent = 'Invalid username or password'; return; }
-  setUser(user);
+  try {
+    const res = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
+    setUser(data.user);
+  } catch(err) { errEl.textContent = 'Connection error'; }
 }
 
-function handleRegister(e) {
+async function handleRegister(e) {
   e.preventDefault();
-  const username = document.getElementById('r-user').value.trim();
-  const password = document.getElementById('r-pass').value;
-  const errEl    = document.getElementById('r-err');
+  const username = document.getElementById('reg-user').value.trim();
+  const password = document.getElementById('reg-pass').value;
+  const errEl = document.getElementById('reg-err');
   errEl.textContent = '';
-
-  if (username.toLowerCase() === 'admin') { errEl.textContent = 'Username not available'; return; }
-  if (username.length < 3) { errEl.textContent = 'Username must be at least 3 characters'; return; }
-  if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; return; }
-
-  const users = loadUsers();
-  if (users.find(u => u.username === username)) { errEl.textContent = 'Username already taken'; return; }
-
-  const newUser = { id: genId(), username, password: hashPw(password), keys: 0, isAdmin: false };
-  users.push(newUser);
-  saveUsers(users);
-  setUser(newUser);
+  try {
+    const res = await fetch(`${API}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Register failed'; return; }
+    setUser(data.user);
+  } catch(err) { errEl.textContent = 'Connection error'; }
 }
 
 function setUser(user) {
-  currentUser = { ...user };
+  currentUser = user;
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('game-screen').classList.remove('hidden');
-  document.getElementById('uname-display').textContent = user.username;
-  updateKeys(user.keys);
+  document.getElementById('username-display').textContent = user.username;
+  updateKeysDisplay(user.keys);
   if (user.isAdmin) {
     document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
   }
   initPossibleDrops();
-  buildIdleReel();
+  buildInitialReel();
   switchTab('case');
 }
 
 function logout() {
-  currentUser    = null;
-  isSpinning     = false;
-  selectedInvIds = new Set();
-  inventoryData  = [];
+  currentUser = null;
+  selectedInvIds.clear();
+  inventoryData = [];
+  isSpinning = false;
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('auth-screen').classList.remove('hidden');
   document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-  document.getElementById('l-user').value = '';
-  document.getElementById('l-pass').value = '';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
   showAuthTab('login');
 }
 
-function updateKeys(keys) {
-  if (currentUser) {
-    currentUser.keys = keys;
-    const users = loadUsers();
-    const idx   = users.findIndex(u => u.id === currentUser.id);
-    if (idx !== -1) { users[idx].keys = keys; saveUsers(users); }
-  }
+function updateKeysDisplay(keys) {
   document.getElementById('keys-count').textContent = keys;
+  if (currentUser) currentUser.keys = keys;
 }
 
 /* ═══════════════════════════════════════
@@ -213,16 +193,17 @@ function switchTab(tab) {
     if (btn) btn.classList.toggle('active', t === tab);
   });
   if (tab === 'inventory') loadInventory();
-  if (tab === 'admin')     loadAdminUsers();
+  if (tab === 'admin') loadAdminUsers();
 }
 
 /* ═══════════════════════════════════════
    POSSIBLE DROPS
 ═══════════════════════════════════════ */
 function initPossibleDrops() {
-  document.getElementById('possible-grid').innerHTML = KNIVES.map(k => `
+  const grid = document.getElementById('possible-grid');
+  grid.innerHTML = KNIVES.map(k => `
     <div class="icard rarity-${k.rarity}">
-      <div class="icard-emoji">${k.emoji}</div>
+      <img src="${k.image}" alt="${k.name}" />
       <div class="iname">${k.name}</div>
       <div class="ival">🪙 ${k.value}</div>
       <div class="rarity-badge ${k.rarity}">${k.rarity}</div>
@@ -233,63 +214,69 @@ function initPossibleDrops() {
 /* ═══════════════════════════════════════
    REEL
 ═══════════════════════════════════════ */
-function knifeAt(winner, idx) {
-  return idx === WINNER_IDX ? winner : KNIVES[Math.floor(Math.random() * KNIVES.length)];
+function knifeForSlot(winner, idx) {
+  if (idx === WINNER_IDX) return winner;
+  return KNIVES[Math.floor(Math.random() * KNIVES.length)];
 }
 
-function makeReelCard(knife) {
-  const d = document.createElement('div');
-  d.className = `ri ri-${knife.rarity}`;
-  d.innerHTML = `
-    <span class="ri-emoji">${knife.emoji}</span>
-    <div class="ri-name">${knife.name}</div>
-    <div class="ri-val">🪙${knife.value}</div>
-  `;
-  return d;
-}
-
-function getStartX() {
-  const vp = document.getElementById('reel-viewport');
-  return (vp.offsetWidth || 800) / 2 - ITEM_W / 2;
-}
-
-function buildIdleReel() {
+function buildReel(winner) {
   const strip = document.getElementById('reel-strip');
   strip.innerHTML = '';
+  const viewport = document.getElementById('reel-viewport');
+  const startX = viewport.offsetWidth / 2 - ITEM_W / 2;
   strip.style.transition = 'none';
-  strip.style.transform  = `translateX(${getStartX()}px)`;
+  strip.style.transform = `translateX(${startX}px)`;
+
   for (let i = 0; i < STRIP_COUNT; i++) {
-    strip.appendChild(makeReelCard(KNIVES[Math.floor(Math.random() * KNIVES.length)]));
+    const knife = knifeForSlot(winner, i);
+    const div = document.createElement('div');
+    div.className = `ri ri-${knife.rarity}`;
+    div.innerHTML = `
+      <img src="${knife.image}" alt="${knife.name}" />
+      <div class="ri-name">${knife.name}</div>
+      <div class="ri-val">🪙${knife.value}</div>
+    `;
+    strip.appendChild(div);
   }
+  return startX;
 }
 
-function buildWinnerReel(winner) {
-  const strip  = document.getElementById('reel-strip');
+function buildInitialReel() {
+  const strip = document.getElementById('reel-strip');
   strip.innerHTML = '';
+  const viewport = document.getElementById('reel-viewport');
+  const startX = (viewport.offsetWidth || 800) / 2 - ITEM_W / 2;
   strip.style.transition = 'none';
-  strip.style.transform  = `translateX(${getStartX()}px)`;
-  strip.offsetHeight; // reflow
+  strip.style.transform = `translateX(${startX}px)`;
+
   for (let i = 0; i < STRIP_COUNT; i++) {
-    strip.appendChild(makeReelCard(knifeAt(winner, i)));
+    const knife = KNIVES[Math.floor(Math.random() * KNIVES.length)];
+    const div = document.createElement('div');
+    div.className = `ri ri-${knife.rarity}`;
+    div.innerHTML = `
+      <img src="${knife.image}" alt="${knife.name}" />
+      <div class="ri-name">${knife.name}</div>
+      <div class="ri-val">🪙${knife.value}</div>
+    `;
+    strip.appendChild(div);
   }
 }
 
 function scheduleTickSounds() {
+  const DURATION = 6000;
   let t = 0, interval = 28;
-  while (t < 5900) {
-    const vol = Math.max(0.012, 0.07 - (t / 6000) * 0.058);
-    setTimeout(() => playTick(vol), t);
-    interval = Math.min(interval * 1.075, 430);
+  while (t < DURATION - 100) {
+    const vol = Math.max(0.015, 0.07 - (t / DURATION) * 0.055);
+    const delay = t;
+    setTimeout(() => playTick(vol), delay);
+    interval = Math.min(interval * 1.075, 420);
     t += interval;
   }
 }
 
-/* ═══════════════════════════════════════
-   CASE OPENING
-═══════════════════════════════════════ */
-function openCase() {
+async function openCase() {
   if (isSpinning || !currentUser) return;
-  if (currentUser.keys < CASE_COST) {
+  if (currentUser.keys < 10) {
     alert("You don't have enough keys! Ask an admin for more.");
     return;
   }
@@ -299,58 +286,76 @@ function openCase() {
   btn.disabled = true;
   btn.textContent = 'SPINNING...';
 
-  // Deduct keys immediately
-  updateKeys(currentUser.keys - CASE_COST);
+  try {
+    const res = await fetch(`${API}/game/open-case`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUser.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to open case');
+      isSpinning = false;
+      btn.disabled = false;
+      btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
+      return;
+    }
 
-  // Pick winner (fair — equal 1/7 chance)
-  const winner = KNIVES[Math.floor(Math.random() * KNIVES.length)];
+    updateKeysDisplay(data.keys);
 
-  // Add item to inventory
-  const inv = loadInventory();
-  const newItem = { id: genId(), userId: currentUser.id, itemName: winner.name, rarity: winner.rarity, value: winner.value, obtainedAt: new Date().toISOString() };
-  inv.push(newItem);
-  saveInventory(inv);
+    const winner = KNIVES.find(k => k.name === data.item.name) || KNIVES[0];
+    const startX = buildReel(winner);
 
-  // Build reel with winner at slot 45
-  buildWinnerReel(winner);
+    // Force reflow before animation
+    document.getElementById('reel-strip').offsetHeight;
 
-  const startX = getStartX();
-  const endX   = startX - WINNER_IDX * ITEM_TOTAL + Math.floor(Math.random() * 30) - 15;
+    const endX = startX - WINNER_IDX * ITEM_TOTAL;
 
-  // Animate
-  setTimeout(() => {
+    // Small random offset so it doesn't always land dead center
+    const nudge = Math.floor(Math.random() * 30) - 15;
+
     const strip = document.getElementById('reel-strip');
     strip.style.transition = 'transform 6s cubic-bezier(0.12, 0.85, 0.25, 1)';
-    strip.style.transform  = `translateX(${endX}px)`;
+    strip.style.transform = `translateX(${endX + nudge}px)`;
+
     scheduleTickSounds();
 
     setTimeout(() => {
       // Highlight winner card
-      const cards = document.getElementById('reel-strip').querySelectorAll('.ri');
-      if (cards[WINNER_IDX]) cards[WINNER_IDX].classList.add('winner');
-      playWin(winner.rarity);
+      const items = strip.querySelectorAll('.ri');
+      if (items[WINNER_IDX]) items[WINNER_IDX].classList.add('winner');
+
+      playWinSound(winner.rarity);
 
       setTimeout(() => {
-        showWinModal(winner, currentUser.keys);
+        showWinModal(winner, data.keys);
         isSpinning = false;
         btn.disabled = false;
-        btn.textContent = '⚡ OPEN CASE';
+        btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
       }, 700);
     }, 6100);
-  }, 30);
+
+  } catch(err) {
+    console.error(err);
+    alert('Connection error');
+    isSpinning = false;
+    btn.disabled = false;
+    btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
+  }
 }
 
 /* ═══════════════════════════════════════
    WIN MODAL
 ═══════════════════════════════════════ */
 function showWinModal(knife, keysLeft) {
-  document.getElementById('mknife-emoji').textContent = knife.emoji;
-  document.getElementById('mname').textContent        = knife.name;
-  document.getElementById('mcoins').textContent       = `🪙 ${knife.value} Coins = ${knife.value} Robux`;
-  document.getElementById('mkeys').textContent        = `🗝️ ${keysLeft} keys remaining`;
-  const badge = document.getElementById('mbadge');
+  document.getElementById('win-img').src = knife.image;
+  document.getElementById('win-img').alt = knife.name;
+  document.getElementById('win-name').textContent = knife.name;
+  document.getElementById('win-coins').textContent = `🪙 ${knife.value} Coins = ${knife.value} Robux`;
+  document.getElementById('win-keys-left').textContent = `🗝️ ${keysLeft} keys remaining`;
+  const badge = document.getElementById('win-badge');
   badge.textContent = knife.rarity;
-  badge.className   = `rarity-badge mbadge ${knife.rarity}`;
+  badge.className = `rarity-badge modal-badge ${knife.rarity}`;
   const glow = document.getElementById('modal-glow');
   glow.className = `modal-glow ${knife.rarity}`;
   document.getElementById('win-modal').classList.remove('hidden');
@@ -363,149 +368,166 @@ function closeModal() {
 /* ═══════════════════════════════════════
    INVENTORY
 ═══════════════════════════════════════ */
-function loadInventory() {
+async function loadInventory() {
   selectedInvIds.clear();
   updateWithdrawBar();
-  if (!currentUser) return;
 
-  inventoryData = (loadInventory_raw()).filter(i => i.userId === currentUser.id);
-  const grid    = document.getElementById('inv-grid');
-  document.getElementById('inv-badge').textContent = `${inventoryData.length} item${inventoryData.length !== 1 ? 's' : ''}`;
+  const grid = document.getElementById('inventory-grid');
+  grid.innerHTML = '<div class="empty-msg">Loading...</div>';
 
-  if (inventoryData.length === 0) {
-    grid.innerHTML = '<div class="empty-msg">No items yet — open a case!</div>';
-    return;
+  try {
+    const res = await fetch(`${API}/game/inventory/${currentUser.id}`);
+    const data = await res.json();
+    inventoryData = data.items || [];
+
+    const totalEl = document.getElementById('inv-total-count');
+    totalEl.textContent = `${inventoryData.length} item${inventoryData.length !== 1 ? 's' : ''}`;
+
+    if (inventoryData.length === 0) {
+      grid.innerHTML = '<div class="empty-msg">No items yet. Open a case to get started!</div>';
+      return;
+    }
+
+    grid.innerHTML = inventoryData.map(item => {
+      const knife = KNIVES.find(k => k.name === item.itemName);
+      const img = knife ? knife.image : 'knife-rusty.png';
+      return `
+        <div class="icard inv-item rarity-${item.rarity}" data-id="${item.id}" data-val="${item.value}" onclick="toggleInvItem(this)">
+          <div class="sel-overlay"><span class="sel-check">✓</span></div>
+          <img src="${img}" alt="${item.itemName}" />
+          <div class="iname">${item.itemName}</div>
+          <div class="ival">🪙 ${item.value}</div>
+          <div class="rarity-badge ${item.rarity}">${item.rarity}</div>
+        </div>
+      `;
+    }).join('');
+  } catch(err) {
+    grid.innerHTML = '<div class="empty-msg">Failed to load inventory.</div>';
   }
-
-  grid.innerHTML = inventoryData.map(item => {
-    const knife = KNIVES.find(k => k.name === item.itemName);
-    const emoji = knife ? knife.emoji : '🔪';
-    return `
-      <div class="icard inv-item rarity-${item.rarity}" data-id="${item.id}" data-val="${item.value}" onclick="toggleItem(this)">
-        <div class="sel-overlay"><span class="sel-check">✓</span></div>
-        <div class="icard-emoji">${emoji}</div>
-        <div class="iname">${item.itemName}</div>
-        <div class="ival">🪙 ${item.value}</div>
-        <div class="rarity-badge ${item.rarity}">${item.rarity}</div>
-      </div>
-    `;
-  }).join('');
 }
 
-function loadInventory_raw() {
-  return JSON.parse(localStorage.getItem('kc_inventory') || '[]');
-}
-
-function toggleItem(el) {
+function toggleInvItem(el) {
   const id = parseInt(el.dataset.id);
-  if (selectedInvIds.has(id)) { selectedInvIds.delete(id); el.classList.remove('selected'); }
-  else                         { selectedInvIds.add(id);    el.classList.add('selected'); }
+  if (selectedInvIds.has(id)) {
+    selectedInvIds.delete(id);
+    el.classList.remove('selected');
+  } else {
+    selectedInvIds.add(id);
+    el.classList.add('selected');
+  }
   updateWithdrawBar();
 }
 
 function updateWithdrawBar() {
+  const bar = document.getElementById('withdraw-bar');
   const count = selectedInvIds.size;
-  const total = inventoryData.filter(i => selectedInvIds.has(i.id)).reduce((s, i) => s + i.value, 0);
+  const totalVal = inventoryData
+    .filter(i => selectedInvIds.has(i.id))
+    .reduce((s, i) => s + i.value, 0);
+
   document.getElementById('sel-count').textContent = `${count} selected`;
-  document.getElementById('sel-robux').textContent = `${total} Robux`;
-  document.getElementById('wb-bar').classList.toggle('hidden', count === 0);
+  document.getElementById('sel-robux').textContent = `${totalVal} Robux`;
+
+  if (count > 0) bar.classList.remove('hidden');
+  else bar.classList.add('hidden');
 }
 
 async function withdraw() {
   if (selectedInvIds.size === 0 || !currentUser) return;
-
-  const ids   = Array.from(selectedInvIds);
-  const items = inventoryData.filter(i => ids.includes(i.id));
-  const total = items.reduce((s, i) => s + i.value, 0);
-  const list  = items.map(i => `• ${i.itemName} — ${i.value} Robux`).join('\n');
-
-  const payload = {
-    embeds: [{
-      title: '🔪 KnifeCase Withdrawal',
-      color: 0xf0bf30,
-      fields: [
-        { name: '👤 Player',     value: currentUser.username,        inline: true },
-        { name: '💰 Total Value', value: `${total} Robux`,           inline: true },
-        { name: '📦 Items',       value: list || 'none', inline: false },
-      ],
-      timestamp: new Date().toISOString(),
-      footer: { text: 'KnifeCase • Withdrawal' },
-    }],
-  };
+  const ids = Array.from(selectedInvIds);
 
   try {
-    await fetch(DISCORD_WEBHOOK, {
+    const res = await fetch(`${API}/game/withdraw`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ userId: currentUser.id, itemIds: ids }),
     });
-  } catch(e) { /* Discord CORS on some origins — ignore */ }
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Withdraw failed'); return; }
 
-  // Remove from inventory
-  const allInv = loadInventory_raw().filter(i => !ids.includes(i.id));
-  saveInventory(allInv);
-
-  playWithdraw();
-  alert(`✅ Withdrawn! ${items.length} item(s) worth ${total} Robux sent to Discord.`);
-  loadInventory();
+    playWithdrawSound();
+    alert(`✅ Withdrawn! ${data.withdrawn} item(s) worth ${data.totalValue} Robux sent to Discord.`);
+    await loadInventory();
+  } catch(err) {
+    alert('Connection error during withdrawal');
+  }
 }
 
 /* ═══════════════════════════════════════
    ADMIN PANEL
 ═══════════════════════════════════════ */
-function loadAdminUsers() {
+async function loadAdminUsers() {
   if (!currentUser?.isAdmin) return;
-  const users = loadUsers().filter(u => !u.isAdmin);
-  const list  = document.getElementById('users-list');
+  const list = document.getElementById('users-list');
+  list.innerHTML = '<div class="loading-msg">Loading...</div>';
 
-  if (users.length === 0) {
-    list.innerHTML = '<div class="empty-msg">No regular users registered yet.</div>';
+  try {
+    const res = await fetch(`${API}/admin/users?adminId=${currentUser.id}`);
+    const data = await res.json();
+    if (!res.ok) { list.innerHTML = `<div class="loading-msg">${data.error}</div>`; return; }
+
+    const users = data.users || [];
+    if (users.length === 0) {
+      list.innerHTML = '<div class="loading-msg">No regular users yet.</div>';
+      return;
+    }
+
+    list.innerHTML = users.map(u => `
+      <div class="user-row" id="urow-${u.id}">
+        <div class="ur-name">👤 ${u.username}</div>
+        <div class="ur-keys" id="ukeys-${u.id}">🗝️ ${u.keys} keys</div>
+        <div class="ur-give">
+          <input type="number" id="ugive-${u.id}" placeholder="Keys" min="1" max="9999" value="10" />
+          <button class="btn-give" onclick="giveKeys(${u.id})">GIVE KEYS</button>
+        </div>
+        <span class="ur-feedback" id="ufb-${u.id}"></span>
+      </div>
+    `).join('');
+  } catch(err) {
+    list.innerHTML = '<div class="loading-msg">Failed to load users.</div>';
+  }
+}
+
+async function giveKeys(userId) {
+  if (!currentUser?.isAdmin) return;
+  const input = document.getElementById(`ugive-${userId}`);
+  const amount = parseInt(input.value);
+  const fb = document.getElementById(`ufb-${userId}`);
+
+  if (isNaN(amount) || amount <= 0) {
+    fb.textContent = 'Enter a valid amount';
+    fb.className = 'ur-feedback err';
     return;
   }
 
-  list.innerHTML = users.map(u => `
-    <div class="user-row" id="urow-${u.id}">
-      <div class="ur-name">👤 ${u.username}</div>
-      <div class="ur-keys" id="ukeys-${u.id}">🗝️ ${u.keys} keys</div>
-      <div class="ur-give">
-        <input type="number" id="ugive-${u.id}" placeholder="Amount" min="1" max="9999" value="10" />
-        <button class="btn-give" onclick="giveKeys(${u.id})">GIVE KEYS</button>
-      </div>
-      <span class="ur-fb" id="ufb-${u.id}"></span>
-    </div>
-  `).join('');
-}
+  try {
+    const res = await fetch(`${API}/admin/give-keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminId: currentUser.id, targetUserId: userId, amount }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      fb.textContent = data.error || 'Failed';
+      fb.className = 'ur-feedback err';
+      return;
+    }
 
-function giveKeys(userId) {
-  if (!currentUser?.isAdmin) return;
-  const input  = document.getElementById(`ugive-${userId}`);
-  const amount = parseInt(input.value);
-  const fb     = document.getElementById(`ufb-${userId}`);
-  const keysEl = document.getElementById(`ukeys-${userId}`);
-
-  if (isNaN(amount) || amount <= 0) {
-    fb.textContent = 'Enter a valid amount'; fb.className = 'ur-fb err'; return;
+    playCoinSound();
+    document.getElementById(`ukeys-${userId}`).textContent = `🗝️ ${data.newKeys} keys`;
+    fb.textContent = `✓ Gave ${amount} keys!`;
+    fb.className = 'ur-feedback ok';
+    input.value = '10';
+    setTimeout(() => { fb.textContent = ''; }, 3000);
+  } catch(err) {
+    fb.textContent = 'Connection error';
+    fb.className = 'ur-feedback err';
   }
-
-  const users = loadUsers();
-  const idx   = users.findIndex(u => u.id === userId);
-  if (idx === -1) { fb.textContent = 'User not found'; fb.className = 'ur-fb err'; return; }
-
-  users[idx].keys += amount;
-  saveUsers(users);
-  playCoin();
-
-  keysEl.textContent = `🗝️ ${users[idx].keys} keys`;
-  fb.textContent  = `✓ Gave ${amount} keys!`;
-  fb.className    = 'ur-fb ok';
-  input.value     = '10';
-  setTimeout(() => { fb.textContent = ''; }, 3000);
 }
 
 /* ═══════════════════════════════════════
    INIT
 ═══════════════════════════════════════ */
 window.addEventListener('DOMContentLoaded', () => {
-  ensureAdmin();
   showAuthTab('login');
 });
