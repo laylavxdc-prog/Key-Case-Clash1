@@ -10,8 +10,6 @@
 </head>
 <body>
 
-<h1 style="color:red;">REPLIT + FIREBASE WORKING</h1>
-
 <!-- ═══════════════ AUTH SCREEN ═══════════════ -->
 <div id="auth-screen" class="auth-screen">
   <div class="auth-particles"></div>
@@ -46,7 +44,7 @@
       </div>
       <div class="aerr" id="reg-err"></div>
       <button type="submit" class="btn-auth">CREATE ACCOUNT</button>
-      <p class="anote">Start with 0 keys — ask an admin for keys!</p>
+      <p class="anote">Start with 100 free keys!</p>
     </form>
   </div>
 </div>
@@ -60,7 +58,6 @@
     <div class="nav-tabs">
       <button class="ntab active" id="ntab-case" onclick="switchTab('case')">🗡️ CASE</button>
       <button class="ntab" id="ntab-inventory" onclick="switchTab('inventory')">🎒 INVENTORY</button>
-      <button class="ntab admin-only hidden" id="ntab-admin" onclick="switchTab('admin')">⚙️ ADMIN</button>
     </div>
     <div class="nav-right">
       <div class="keys-badge">
@@ -111,7 +108,7 @@
 
     <!-- POSSIBLE DROPS -->
     <div class="possible-section">
-      <h3 class="section-label">POSSIBLE DROPS — ALL EQUAL CHANCE</h3>
+      <h3 class="section-label">POSSIBLE DROPS — ALL EQUAL CHANCE (1 in 7)</h3>
       <div class="possible-grid" id="possible-grid"></div>
     </div>
   </div>
@@ -124,25 +121,6 @@
     </div>
     <div id="inventory-grid" class="inv-grid">
       <div class="empty-msg">No items yet. Open a case to get started!</div>
-    </div>
-    <div id="withdraw-bar" class="withdraw-bar hidden">
-      <div class="wb-left">
-        <span id="sel-count" class="wb-count">0 selected</span>
-        <span class="wb-sep">•</span>
-        <span id="sel-robux" class="wb-val">0 Robux</span>
-      </div>
-      <button class="btn-withdraw" onclick="withdraw()">🎮 WITHDRAW TO ROBUX</button>
-    </div>
-  </div>
-
-  <!-- ─── ADMIN TAB ─── -->
-  <div id="tab-admin" class="gtab hidden">
-    <div class="admin-panel">
-      <h2 class="section-label">⚙️ ADMIN PANEL</h2>
-      <p class="admin-sub">Manage player keys</p>
-      <div id="users-list" class="users-list">
-        <div class="loading-msg">Loading users...</div>
-      </div>
     </div>
   </div>
 
@@ -163,40 +141,6 @@
   </div>
 </div>
 
-<script src="script.js"></script>
-
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-  import { getFirestore, collection, addDoc }
-  from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
-    authDomain: "case-clash.firebaseapp.com",
-    projectId: "case-clash",
-    storageBucket: "case-clash.firebasestorage.app",
-    messagingSenderId: "251214048625",
-    appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  console.log("🔥 Firebase connected");
-
-  async function testWrite() {
-    try {
-      const docRef = await addDoc(collection(db, "battles"), {
-        name: "Test Battle",
-        created: Date.now()
-      });
-      console.log("🔥 Battle created:", docRef.id);
-    } catch (e) {
-      console.error("❌ Firebase error:", e);
-    }
-  }
-
-  testWrite();
-</script>
+<script type="module" src="script.js"></script>
 </body>
 </html>

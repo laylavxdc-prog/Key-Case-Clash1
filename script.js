@@ -1,10 +1,27 @@
 'use strict';
 
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js';
+import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js';
+
+/* ═══════════════════════════════════════
+   FIREBASE
+═══════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
+  authDomain: "case-clash.firebaseapp.com",
+  projectId: "case-clash",
+  storageBucket: "case-clash.firebasestorage.app",
+  messagingSenderId: "251214048625",
+  appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+console.log('Firebase connected');
+
 /* ═══════════════════════════════════════
    CONFIG
 ═══════════════════════════════════════ */
-const API = '/api';
-
 const KNIVES = [
   { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
   { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
@@ -15,29 +32,28 @@ const KNIVES = [
   { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png' },
 ];
 
-const ITEM_W  = 110;
-const ITEM_GAP = 10;
-const ITEM_TOTAL = ITEM_W + ITEM_GAP;
-const STRIP_COUNT = 60;
-const WINNER_IDX  = 45;
+const ITEM_W       = 110;
+const ITEM_GAP     = 10;
+const ITEM_TOTAL   = ITEM_W + ITEM_GAP;
+const STRIP_COUNT  = 60;
+const WINNER_IDX   = 45;
+const CASE_COST    = 10;
+const STARTER_KEYS = 100;
 
 /* ═══════════════════════════════════════
    STATE
 ═══════════════════════════════════════ */
 let currentUser = null;
 let isSpinning  = false;
-let selectedInvIds = new Set();
-let inventoryData  = [];
 
 /* ═══════════════════════════════════════
-   SOUND (Web Audio API)
+   AUDIO
 ═══════════════════════════════════════ */
 let audioCtx = null;
 function getCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
 }
-
 function osc(freq, type, start, duration, volume, ctx) {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
@@ -50,14 +66,9 @@ function osc(freq, type, start, duration, volume, ctx) {
   o.start(start);
   o.stop(start + duration + 0.01);
 }
-
 function playTick(vol) {
-  try {
-    const ctx = getCtx();
-    osc(800, 'square', ctx.currentTime, 0.04, vol || 0.06, ctx);
-  } catch(e) {}
+  try { const ctx = getCtx(); osc(800, 'square', ctx.currentTime, 0.04, vol || 0.06, ctx); } catch(e) {}
 }
-
 function playWinSound(rarity) {
   try {
     const ctx = getCtx();
@@ -71,112 +82,97 @@ function playWinSound(rarity) {
       celestial: [659, 784, 988, 1175, 1319, 1568, 2093],
     };
     const notes = scales[rarity] || scales.common;
-    notes.forEach((f, i) => {
-      const t = ctx.currentTime + i * 0.13;
-      osc(f, 'sine', t, 0.45, 0.18, ctx);
-    });
-  } catch(e) {}
-}
-
-function playCoinSound() {
-  try {
-    const ctx = getCtx();
-    [1047, 1319, 1568].forEach((f, i) => {
-      osc(f, 'sine', ctx.currentTime + i * 0.1, 0.3, 0.12, ctx);
-    });
-  } catch(e) {}
-}
-
-function playWithdrawSound() {
-  try {
-    const ctx = getCtx();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sine';
-    o.frequency.setValueAtTime(200, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.4);
-    g.gain.setValueAtTime(0.15, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
-    o.start(); o.stop(ctx.currentTime + 0.6);
-    setTimeout(() => { try { osc(1047, 'sine', ctx.currentTime, 0.3, 0.12, ctx); } catch(e) {} }, 500);
+    notes.forEach((f, i) => osc(f, 'sine', ctx.currentTime + i * 0.13, 0.45, 0.18, ctx));
   } catch(e) {}
 }
 
 /* ═══════════════════════════════════════
-   AUTH HELPERS
+   FIREBASE HELPERS
 ═══════════════════════════════════════ */
-function showAuthTab(tab) {
+async function loadUser(username) {
+  const ref  = doc(db, 'users', username);
+  const snap = await getDoc(ref);
+  return snap.exists() ? snap.data() : null;
+}
+
+async function saveUser(user) {
+  const ref = doc(db, 'users', user.username);
+  await setDoc(ref, user);
+  console.log('Inventory updated');
+}
+
+/* ═══════════════════════════════════════
+   AUTH
+═══════════════════════════════════════ */
+window.showAuthTab = function(tab) {
   document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
   document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
   document.getElementById('atab-login').classList.toggle('active', tab === 'login');
   document.getElementById('atab-register').classList.toggle('active', tab === 'register');
   document.getElementById('login-err').textContent = '';
-  document.getElementById('reg-err').textContent = '';
-}
+  document.getElementById('reg-err').textContent   = '';
+};
 
-async function handleLogin(e) {
+window.handleLogin = async function(e) {
   e.preventDefault();
   const username = document.getElementById('login-user').value.trim();
   const password = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-err');
+  const errEl    = document.getElementById('login-err');
   errEl.textContent = '';
   try {
-    const res = await fetch(`${API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
-    setUser(data.user);
-  } catch(err) { errEl.textContent = 'Connection error'; }
-}
+    const user = await loadUser(username);
+    if (!user)                      { errEl.textContent = 'User not found. Register first.'; return; }
+    if (user.password !== password) { errEl.textContent = 'Incorrect password.'; return; }
+    setUser(user);
+  } catch(err) {
+    errEl.textContent = 'Connection error.';
+    console.error(err);
+  }
+};
 
-async function handleRegister(e) {
+window.handleRegister = async function(e) {
   e.preventDefault();
   const username = document.getElementById('reg-user').value.trim();
   const password = document.getElementById('reg-pass').value;
-  const errEl = document.getElementById('reg-err');
+  const errEl    = document.getElementById('reg-err');
   errEl.textContent = '';
+  if (username.length < 3) { errEl.textContent = 'Username must be 3+ characters.'; return; }
+  if (password.length < 6) { errEl.textContent = 'Password must be 6+ characters.'; return; }
   try {
-    const res = await fetch(`${API}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.error || 'Register failed'; return; }
-    setUser(data.user);
-  } catch(err) { errEl.textContent = 'Connection error'; }
-}
+    const existing = await loadUser(username);
+    if (existing) { errEl.textContent = 'Username already taken.'; return; }
+    const newUser = { username, password, keys: STARTER_KEYS, inventory: [] };
+    await saveUser(newUser);
+    setUser(newUser);
+  } catch(err) {
+    errEl.textContent = 'Connection error.';
+    console.error(err);
+  }
+};
 
 function setUser(user) {
   currentUser = user;
+  localStorage.setItem('knifecase_user', user.username);
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('game-screen').classList.remove('hidden');
   document.getElementById('username-display').textContent = user.username;
   updateKeysDisplay(user.keys);
-  if (user.isAdmin) {
-    document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-  }
   initPossibleDrops();
   buildInitialReel();
   switchTab('case');
+  console.log('User loaded:', user.username);
 }
 
-function logout() {
+window.logout = function() {
   currentUser = null;
-  selectedInvIds.clear();
-  inventoryData = [];
-  isSpinning = false;
+  isSpinning  = false;
+  localStorage.removeItem('knifecase_user');
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('auth-screen').classList.remove('hidden');
-  document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   showAuthTab('login');
-}
+};
 
 function updateKeysDisplay(keys) {
   document.getElementById('keys-count').textContent = keys;
@@ -184,17 +180,16 @@ function updateKeysDisplay(keys) {
 }
 
 /* ═══════════════════════════════════════
-   TAB SWITCHING
+   TABS
 ═══════════════════════════════════════ */
-function switchTab(tab) {
-  ['case','inventory','admin'].forEach(t => {
+window.switchTab = function(tab) {
+  ['case', 'inventory'].forEach(t => {
     document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tab);
     const btn = document.getElementById(`ntab-${t}`);
     if (btn) btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'inventory') loadInventory();
-  if (tab === 'admin') loadAdminUsers();
-}
+  if (tab === 'inventory') renderInventory();
+};
 
 /* ═══════════════════════════════════════
    POSSIBLE DROPS
@@ -214,50 +209,39 @@ function initPossibleDrops() {
 /* ═══════════════════════════════════════
    REEL
 ═══════════════════════════════════════ */
-function knifeForSlot(winner, idx) {
-  if (idx === WINNER_IDX) return winner;
+function randomKnife() {
   return KNIVES[Math.floor(Math.random() * KNIVES.length)];
 }
 
 function buildReel(winner) {
-  const strip = document.getElementById('reel-strip');
-  strip.innerHTML = '';
+  const strip    = document.getElementById('reel-strip');
   const viewport = document.getElementById('reel-viewport');
-  const startX = viewport.offsetWidth / 2 - ITEM_W / 2;
+  const startX   = viewport.offsetWidth / 2 - ITEM_W / 2;
+  strip.innerHTML = '';
   strip.style.transition = 'none';
-  strip.style.transform = `translateX(${startX}px)`;
-
+  strip.style.transform  = `translateX(${startX}px)`;
   for (let i = 0; i < STRIP_COUNT; i++) {
-    const knife = knifeForSlot(winner, i);
-    const div = document.createElement('div');
+    const knife = i === WINNER_IDX ? winner : randomKnife();
+    const div   = document.createElement('div');
     div.className = `ri ri-${knife.rarity}`;
-    div.innerHTML = `
-      <img src="${knife.image}" alt="${knife.name}" />
-      <div class="ri-name">${knife.name}</div>
-      <div class="ri-val">🪙${knife.value}</div>
-    `;
+    div.innerHTML = `<img src="${knife.image}" alt="${knife.name}" /><div class="ri-name">${knife.name}</div><div class="ri-val">🪙${knife.value}</div>`;
     strip.appendChild(div);
   }
   return startX;
 }
 
 function buildInitialReel() {
-  const strip = document.getElementById('reel-strip');
-  strip.innerHTML = '';
+  const strip    = document.getElementById('reel-strip');
   const viewport = document.getElementById('reel-viewport');
-  const startX = (viewport.offsetWidth || 800) / 2 - ITEM_W / 2;
+  const startX   = (viewport.offsetWidth || 800) / 2 - ITEM_W / 2;
+  strip.innerHTML = '';
   strip.style.transition = 'none';
-  strip.style.transform = `translateX(${startX}px)`;
-
+  strip.style.transform  = `translateX(${startX}px)`;
   for (let i = 0; i < STRIP_COUNT; i++) {
-    const knife = KNIVES[Math.floor(Math.random() * KNIVES.length)];
-    const div = document.createElement('div');
+    const knife = randomKnife();
+    const div   = document.createElement('div');
     div.className = `ri ri-${knife.rarity}`;
-    div.innerHTML = `
-      <img src="${knife.image}" alt="${knife.name}" />
-      <div class="ri-name">${knife.name}</div>
-      <div class="ri-val">🪙${knife.value}</div>
-    `;
+    div.innerHTML = `<img src="${knife.image}" alt="${knife.name}" /><div class="ri-name">${knife.name}</div><div class="ri-val">🪙${knife.value}</div>`;
     strip.appendChild(div);
   }
 }
@@ -267,267 +251,124 @@ function scheduleTickSounds() {
   let t = 0, interval = 28;
   while (t < DURATION - 100) {
     const vol = Math.max(0.015, 0.07 - (t / DURATION) * 0.055);
-    const delay = t;
-    setTimeout(() => playTick(vol), delay);
+    setTimeout(() => playTick(vol), t);
     interval = Math.min(interval * 1.075, 420);
     t += interval;
   }
 }
 
-async function openCase() {
+/* ═══════════════════════════════════════
+   CASE OPENING
+═══════════════════════════════════════ */
+window.openCase = async function() {
   if (isSpinning || !currentUser) return;
-  if (currentUser.keys < 10) {
-    alert("You don't have enough keys! Ask an admin for more.");
+  if (currentUser.keys < CASE_COST) {
+    alert("You don't have enough keys!");
     return;
   }
 
   isSpinning = true;
-  const btn = document.getElementById('open-btn');
+  const btn  = document.getElementById('open-btn');
   btn.disabled = true;
   btn.textContent = 'SPINNING...';
 
+  const winner = randomKnife();
+  console.log('Item won:', winner.name, '(' + winner.rarity + ')');
+
+  currentUser.keys -= CASE_COST;
+  const item = {
+    id:     Date.now(),
+    name:   winner.name,
+    rarity: winner.rarity,
+    value:  winner.value,
+    image:  winner.image,
+  };
+  currentUser.inventory = [...(currentUser.inventory || []), item];
+  updateKeysDisplay(currentUser.keys);
+
   try {
-    const res = await fetch(`${API}/game/open-case`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: currentUser.id }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.error || 'Failed to open case');
-      isSpinning = false;
+    await saveUser(currentUser);
+  } catch(err) {
+    console.error('Failed to save to Firebase:', err);
+  }
+
+  const startX = buildReel(winner);
+  document.getElementById('reel-strip').offsetHeight;
+  const endX  = startX - WINNER_IDX * ITEM_TOTAL;
+  const nudge = Math.floor(Math.random() * 30) - 15;
+  const strip = document.getElementById('reel-strip');
+  strip.style.transition = 'transform 6s cubic-bezier(0.12, 0.85, 0.25, 1)';
+  strip.style.transform  = `translateX(${endX + nudge}px)`;
+
+  scheduleTickSounds();
+
+  setTimeout(() => {
+    const items = strip.querySelectorAll('.ri');
+    if (items[WINNER_IDX]) items[WINNER_IDX].classList.add('winner');
+    playWinSound(winner.rarity);
+    setTimeout(() => {
+      showWinModal(winner);
+      isSpinning   = false;
       btn.disabled = false;
       btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
-      return;
-    }
-
-    updateKeysDisplay(data.keys);
-
-    const winner = KNIVES.find(k => k.name === data.item.name) || KNIVES[0];
-    const startX = buildReel(winner);
-
-    // Force reflow before animation
-    document.getElementById('reel-strip').offsetHeight;
-
-    const endX = startX - WINNER_IDX * ITEM_TOTAL;
-
-    // Small random offset so it doesn't always land dead center
-    const nudge = Math.floor(Math.random() * 30) - 15;
-
-    const strip = document.getElementById('reel-strip');
-    strip.style.transition = 'transform 6s cubic-bezier(0.12, 0.85, 0.25, 1)';
-    strip.style.transform = `translateX(${endX + nudge}px)`;
-
-    scheduleTickSounds();
-
-    setTimeout(() => {
-      // Highlight winner card
-      const items = strip.querySelectorAll('.ri');
-      if (items[WINNER_IDX]) items[WINNER_IDX].classList.add('winner');
-
-      playWinSound(winner.rarity);
-
-      setTimeout(() => {
-        showWinModal(winner, data.keys);
-        isSpinning = false;
-        btn.disabled = false;
-        btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
-      }, 700);
-    }, 6100);
-
-  } catch(err) {
-    console.error(err);
-    alert('Connection error');
-    isSpinning = false;
-    btn.disabled = false;
-    btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
-  }
-}
+    }, 700);
+  }, 6100);
+};
 
 /* ═══════════════════════════════════════
    WIN MODAL
 ═══════════════════════════════════════ */
-function showWinModal(knife, keysLeft) {
-  document.getElementById('win-img').src = knife.image;
-  document.getElementById('win-img').alt = knife.name;
-  document.getElementById('win-name').textContent = knife.name;
-  document.getElementById('win-coins').textContent = `🪙 ${knife.value} Coins = ${knife.value} Robux`;
-  document.getElementById('win-keys-left').textContent = `🗝️ ${keysLeft} keys remaining`;
+function showWinModal(knife) {
+  document.getElementById('win-img').src   = knife.image;
+  document.getElementById('win-img').alt   = knife.name;
+  document.getElementById('win-name').textContent      = knife.name;
+  document.getElementById('win-coins').textContent     = `🪙 ${knife.value} Coins`;
+  document.getElementById('win-keys-left').textContent = `🗝️ ${currentUser.keys} keys remaining`;
   const badge = document.getElementById('win-badge');
   badge.textContent = knife.rarity;
-  badge.className = `rarity-badge modal-badge ${knife.rarity}`;
-  const glow = document.getElementById('modal-glow');
-  glow.className = `modal-glow ${knife.rarity}`;
+  badge.className   = `rarity-badge modal-badge ${knife.rarity}`;
+  document.getElementById('modal-glow').className = `modal-glow ${knife.rarity}`;
   document.getElementById('win-modal').classList.remove('hidden');
 }
 
-function closeModal() {
+window.closeModal = function() {
   document.getElementById('win-modal').classList.add('hidden');
-}
+};
 
 /* ═══════════════════════════════════════
    INVENTORY
 ═══════════════════════════════════════ */
-async function loadInventory() {
-  selectedInvIds.clear();
-  updateWithdrawBar();
-
+function renderInventory() {
   const grid = document.getElementById('inventory-grid');
-  grid.innerHTML = '<div class="empty-msg">Loading...</div>';
-
-  try {
-    const res = await fetch(`${API}/game/inventory/${currentUser.id}`);
-    const data = await res.json();
-    inventoryData = data.items || [];
-
-    const totalEl = document.getElementById('inv-total-count');
-    totalEl.textContent = `${inventoryData.length} item${inventoryData.length !== 1 ? 's' : ''}`;
-
-    if (inventoryData.length === 0) {
-      grid.innerHTML = '<div class="empty-msg">No items yet. Open a case to get started!</div>';
-      return;
-    }
-
-    grid.innerHTML = inventoryData.map(item => {
-      const knife = KNIVES.find(k => k.name === item.itemName);
-      const img = knife ? knife.image : 'knife-rusty.png';
-      return `
-        <div class="icard inv-item rarity-${item.rarity}" data-id="${item.id}" data-val="${item.value}" onclick="toggleInvItem(this)">
-          <div class="sel-overlay"><span class="sel-check">✓</span></div>
-          <img src="${img}" alt="${item.itemName}" />
-          <div class="iname">${item.itemName}</div>
-          <div class="ival">🪙 ${item.value}</div>
-          <div class="rarity-badge ${item.rarity}">${item.rarity}</div>
-        </div>
-      `;
-    }).join('');
-  } catch(err) {
-    grid.innerHTML = '<div class="empty-msg">Failed to load inventory.</div>';
-  }
-}
-
-function toggleInvItem(el) {
-  const id = parseInt(el.dataset.id);
-  if (selectedInvIds.has(id)) {
-    selectedInvIds.delete(id);
-    el.classList.remove('selected');
-  } else {
-    selectedInvIds.add(id);
-    el.classList.add('selected');
-  }
-  updateWithdrawBar();
-}
-
-function updateWithdrawBar() {
-  const bar = document.getElementById('withdraw-bar');
-  const count = selectedInvIds.size;
-  const totalVal = inventoryData
-    .filter(i => selectedInvIds.has(i.id))
-    .reduce((s, i) => s + i.value, 0);
-
-  document.getElementById('sel-count').textContent = `${count} selected`;
-  document.getElementById('sel-robux').textContent = `${totalVal} Robux`;
-
-  if (count > 0) bar.classList.remove('hidden');
-  else bar.classList.add('hidden');
-}
-
-async function withdraw() {
-  if (selectedInvIds.size === 0 || !currentUser) return;
-  const ids = Array.from(selectedInvIds);
-
-  try {
-    const res = await fetch(`${API}/game/withdraw`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: currentUser.id, itemIds: ids }),
-    });
-    const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Withdraw failed'); return; }
-
-    playWithdrawSound();
-    alert(`✅ Withdrawn! ${data.withdrawn} item(s) worth ${data.totalValue} Robux sent to Discord.`);
-    await loadInventory();
-  } catch(err) {
-    alert('Connection error during withdrawal');
-  }
-}
-
-/* ═══════════════════════════════════════
-   ADMIN PANEL
-═══════════════════════════════════════ */
-async function loadAdminUsers() {
-  if (!currentUser?.isAdmin) return;
-  const list = document.getElementById('users-list');
-  list.innerHTML = '<div class="loading-msg">Loading...</div>';
-
-  try {
-    const res = await fetch(`${API}/admin/users?adminId=${currentUser.id}`);
-    const data = await res.json();
-    if (!res.ok) { list.innerHTML = `<div class="loading-msg">${data.error}</div>`; return; }
-
-    const users = data.users || [];
-    if (users.length === 0) {
-      list.innerHTML = '<div class="loading-msg">No regular users yet.</div>';
-      return;
-    }
-
-    list.innerHTML = users.map(u => `
-      <div class="user-row" id="urow-${u.id}">
-        <div class="ur-name">👤 ${u.username}</div>
-        <div class="ur-keys" id="ukeys-${u.id}">🗝️ ${u.keys} keys</div>
-        <div class="ur-give">
-          <input type="number" id="ugive-${u.id}" placeholder="Keys" min="1" max="9999" value="10" />
-          <button class="btn-give" onclick="giveKeys(${u.id})">GIVE KEYS</button>
-        </div>
-        <span class="ur-feedback" id="ufb-${u.id}"></span>
-      </div>
-    `).join('');
-  } catch(err) {
-    list.innerHTML = '<div class="loading-msg">Failed to load users.</div>';
-  }
-}
-
-async function giveKeys(userId) {
-  if (!currentUser?.isAdmin) return;
-  const input = document.getElementById(`ugive-${userId}`);
-  const amount = parseInt(input.value);
-  const fb = document.getElementById(`ufb-${userId}`);
-
-  if (isNaN(amount) || amount <= 0) {
-    fb.textContent = 'Enter a valid amount';
-    fb.className = 'ur-feedback err';
+  const inv  = currentUser?.inventory || [];
+  document.getElementById('inv-total-count').textContent =
+    `${inv.length} item${inv.length !== 1 ? 's' : ''}`;
+  if (inv.length === 0) {
+    grid.innerHTML = '<div class="empty-msg">No items yet. Open a case to get started!</div>';
     return;
   }
-
-  try {
-    const res = await fetch(`${API}/admin/give-keys`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminId: currentUser.id, targetUserId: userId, amount }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      fb.textContent = data.error || 'Failed';
-      fb.className = 'ur-feedback err';
-      return;
-    }
-
-    playCoinSound();
-    document.getElementById(`ukeys-${userId}`).textContent = `🗝️ ${data.newKeys} keys`;
-    fb.textContent = `✓ Gave ${amount} keys!`;
-    fb.className = 'ur-feedback ok';
-    input.value = '10';
-    setTimeout(() => { fb.textContent = ''; }, 3000);
-  } catch(err) {
-    fb.textContent = 'Connection error';
-    fb.className = 'ur-feedback err';
-  }
+  grid.innerHTML = inv.slice().reverse().map(item => `
+    <div class="icard rarity-${item.rarity}">
+      <img src="${item.image}" alt="${item.name}" />
+      <div class="iname">${item.name}</div>
+      <div class="ival">🪙 ${item.value}</div>
+      <div class="rarity-badge ${item.rarity}">${item.rarity}</div>
+    </div>
+  `).join('');
 }
 
 /* ═══════════════════════════════════════
    INIT
 ═══════════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   showAuthTab('login');
+  const savedUsername = localStorage.getItem('knifecase_user');
+  if (savedUsername) {
+    try {
+      const user = await loadUser(savedUsername);
+      if (user) setUser(user);
+    } catch(err) {
+      console.error('Auto-login failed:', err);
+    }
+  }
 });
