@@ -33,7 +33,7 @@ body { background:var(--bg); color:var(--text); font-family:'Rajdhani',sans-seri
   background:var(--bg2); border:1px solid var(--border2); border-radius:20px;
   padding:40px 36px; box-shadow:0 0 80px rgba(0,0,0,0.5);
 }
-.auth-logo { width:200px; display:block; margin:0 auto 28px; filter:drop-shadow(0 0 16px rgba(240,192,64,0.4)); }
+.auth-logo { width:160px; max-width:70%; height:auto; display:block; margin:0 auto 28px; filter:drop-shadow(0 0 16px rgba(240,192,64,0.4)); }
 .auth-tabs { display:flex; background:var(--bg); border-radius:10px; padding:4px; margin-bottom:28px; }
 .atab {
   flex:1; padding:10px; border:none; background:transparent; color:var(--dim);
