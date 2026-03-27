@@ -1,12 +1,9 @@
 'use strict';
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js';
-
 /* ═══════════════════════════════════════
-   FIREBASE
+   CONFIG
 ═══════════════════════════════════════ */
-const firebaseConfig = {
+const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDEQf0TrDG7QtM96HfpcOrtFbFibFCaK3o",
   authDomain: "case-clash.firebaseapp.com",
   projectId: "case-clash",
@@ -15,13 +12,6 @@ const firebaseConfig = {
   appId: "1:251214048625:web:1f32ab6cbe8ab45f8adad0"
 };
 
-const app = initializeApp(firebaseConfig);
-const db  = getFirestore(app);
-console.log('Firebase connected');
-
-/* ═══════════════════════════════════════
-   CONFIG
-═══════════════════════════════════════ */
 const KNIVES = [
   { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
   { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
@@ -45,6 +35,36 @@ const STARTER_KEYS = 100;
 ═══════════════════════════════════════ */
 let currentUser = null;
 let isSpinning  = false;
+
+/* ═══════════════════════════════════════
+   FIREBASE (lazy dynamic import)
+═══════════════════════════════════════ */
+let _firebase = null;
+
+async function getFirebase() {
+  if (_firebase) return _firebase;
+  const [{ initializeApp }, firestoreMod] = await Promise.all([
+    import('https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js'),
+    import('https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js'),
+  ]);
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db  = firestoreMod.getFirestore(app);
+  _firebase = { db, ...firestoreMod };
+  console.log('Firebase connected');
+  return _firebase;
+}
+
+async function loadUser(username) {
+  const { db, doc, getDoc } = await getFirebase();
+  const snap = await getDoc(doc(db, 'users', username));
+  return snap.exists() ? snap.data() : null;
+}
+
+async function saveUser(user) {
+  const { db, doc, setDoc } = await getFirebase();
+  await setDoc(doc(db, 'users', user.username), user);
+  console.log('Inventory updated');
+}
 
 /* ═══════════════════════════════════════
    AUDIO
@@ -87,33 +107,18 @@ function playWinSound(rarity) {
 }
 
 /* ═══════════════════════════════════════
-   FIREBASE HELPERS
-═══════════════════════════════════════ */
-async function loadUser(username) {
-  const ref  = doc(db, 'users', username);
-  const snap = await getDoc(ref);
-  return snap.exists() ? snap.data() : null;
-}
-
-async function saveUser(user) {
-  const ref = doc(db, 'users', user.username);
-  await setDoc(ref, user);
-  console.log('Inventory updated');
-}
-
-/* ═══════════════════════════════════════
    AUTH
 ═══════════════════════════════════════ */
-window.showAuthTab = function(tab) {
+function showAuthTab(tab) {
   document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
   document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
   document.getElementById('atab-login').classList.toggle('active', tab === 'login');
   document.getElementById('atab-register').classList.toggle('active', tab === 'register');
   document.getElementById('login-err').textContent = '';
   document.getElementById('reg-err').textContent   = '';
-};
+}
 
-window.handleLogin = async function(e) {
+async function handleLogin(e) {
   e.preventDefault();
   const username = document.getElementById('login-user').value.trim();
   const password = document.getElementById('login-pass').value;
@@ -128,9 +133,9 @@ window.handleLogin = async function(e) {
     errEl.textContent = 'Connection error.';
     console.error(err);
   }
-};
+}
 
-window.handleRegister = async function(e) {
+async function handleRegister(e) {
   e.preventDefault();
   const username = document.getElementById('reg-user').value.trim();
   const password = document.getElementById('reg-pass').value;
@@ -148,7 +153,7 @@ window.handleRegister = async function(e) {
     errEl.textContent = 'Connection error.';
     console.error(err);
   }
-};
+}
 
 function setUser(user) {
   currentUser = user;
@@ -163,7 +168,7 @@ function setUser(user) {
   console.log('User loaded:', user.username);
 }
 
-window.logout = function() {
+function logout() {
   currentUser = null;
   isSpinning  = false;
   localStorage.removeItem('knifecase_user');
@@ -172,7 +177,7 @@ window.logout = function() {
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
   showAuthTab('login');
-};
+}
 
 function updateKeysDisplay(keys) {
   document.getElementById('keys-count').textContent = keys;
@@ -182,14 +187,14 @@ function updateKeysDisplay(keys) {
 /* ═══════════════════════════════════════
    TABS
 ═══════════════════════════════════════ */
-window.switchTab = function(tab) {
+function switchTab(tab) {
   ['case', 'inventory'].forEach(t => {
     document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tab);
     const btn = document.getElementById(`ntab-${t}`);
     if (btn) btn.classList.toggle('active', t === tab);
   });
   if (tab === 'inventory') renderInventory();
-};
+}
 
 /* ═══════════════════════════════════════
    POSSIBLE DROPS
@@ -260,7 +265,7 @@ function scheduleTickSounds() {
 /* ═══════════════════════════════════════
    CASE OPENING
 ═══════════════════════════════════════ */
-window.openCase = async function() {
+async function openCase() {
   if (isSpinning || !currentUser) return;
   if (currentUser.keys < CASE_COST) {
     alert("You don't have enough keys!");
@@ -313,7 +318,7 @@ window.openCase = async function() {
       btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
     }, 700);
   }, 6100);
-};
+}
 
 /* ═══════════════════════════════════════
    WIN MODAL
@@ -331,9 +336,9 @@ function showWinModal(knife) {
   document.getElementById('win-modal').classList.remove('hidden');
 }
 
-window.closeModal = function() {
+function closeModal() {
   document.getElementById('win-modal').classList.add('hidden');
-};
+}
 
 /* ═══════════════════════════════════════
    INVENTORY
@@ -360,7 +365,7 @@ function renderInventory() {
 /* ═══════════════════════════════════════
    INIT
 ═══════════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', async () => {
   showAuthTab('login');
   const savedUsername = localStorage.getItem('knifecase_user');
   if (savedUsername) {
