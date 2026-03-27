@@ -14,6 +14,10 @@ const FIREBASE_CONFIG = {
 
 const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1486783614388666448/yTR9D5E-hSwzP2Yn2am1ig81dWMDrDpCzlS-yXTTH_OrX3xvw-j4C4QDWuSgk9FFpBDN';
 
+// Hardcoded admin usernames — add any username here to grant instant admin access.
+// These accounts get the Admin tab automatically regardless of Firestore settings.
+const ADMIN_USERNAMES = ['idek', 'admin'];
+
 const KNIVES = [
   { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
   { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
@@ -192,7 +196,22 @@ async function onUserLoggedIn(firebaseUser) {
     profile = { username, keys: STARTER_KEYS, inventory: [], isAdmin: false };
     await saveProfile(profile);
   }
-  currentProfile = profile;
+
+  // Grant admin if username is in the hardcoded list OR Firestore flag is set.
+  // This means you never need to touch Firestore manually — just add to ADMIN_USERNAMES above.
+  const isAdmin = ADMIN_USERNAMES.includes(username.toLowerCase()) || profile.isAdmin === true;
+
+  // If the user is a hardcoded admin but their Firestore doc doesn't reflect it yet, fix it now.
+  if (isAdmin && !profile.isAdmin) {
+    profile.isAdmin = true;
+    await saveProfile(profile);
+    console.log('Admin flag synced to Firestore for:', username);
+  }
+
+  profile.isAdmin = isAdmin;
+  currentProfile  = profile;
+
+  console.log('Logged in:', username, '| Keys:', profile.keys, '| Admin:', isAdmin, '| Firestore isAdmin:', profile.isAdmin);
 
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('game-screen').classList.remove('hidden');
@@ -201,8 +220,9 @@ async function onUserLoggedIn(firebaseUser) {
 
   // Show admin tab only for admins
   const adminBtn = document.getElementById('ntab-admin');
-  if (profile.isAdmin) {
+  if (isAdmin) {
     adminBtn.classList.remove('hidden');
+    console.log('Admin panel unlocked for:', username);
   } else {
     adminBtn.classList.add('hidden');
   }
@@ -210,7 +230,6 @@ async function onUserLoggedIn(firebaseUser) {
   initPossibleDrops();
   buildInitialReel();
   switchTab('case');
-  console.log('Logged in:', username, '| Keys:', profile.keys, '| Admin:', !!profile.isAdmin);
 }
 
 function updateKeysDisplay(keys) {
