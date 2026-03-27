@@ -10,12 +10,11 @@
 </head>
 <body>
 
-<!-- (ALL YOUR EXISTING HTML STAYS THE SAME — I DIDN’T TOUCH IT) -->
+<h1>KnifeCase Running 🔥</h1>
 
-<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
-<!-- ... everything unchanged ... -->
+<!-- YOUR SITE CONTENT (shortened for now just to test console) -->
 
-<!-- ═══════════════ WIN MODAL ═══════════════ -->
+<!-- WIN MODAL -->
 <div id="win-modal" class="modal hidden">
   <div class="modal-backdrop" onclick="closeModal()"></div>
   <div class="modal-card">
@@ -30,11 +29,13 @@
   </div>
 </div>
 
-<!-- 🔥 YOUR NORMAL SCRIPT -->
+<!-- NORMAL SCRIPT -->
 <script src="script.js"></script>
 
-<!-- 🔥 ADD THIS RIGHT BELOW -->
+<!-- 🔥 FIREBASE + DEBUG -->
 <script type="module">
+  console.log("🔥 Firebase script running");
+
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
   import { getFirestore, collection, addDoc } 
   from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
@@ -51,7 +52,6 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // TEST WRITE
   async function testWrite() {
     try {
       const docRef = await addDoc(collection(db, "battles"), {
