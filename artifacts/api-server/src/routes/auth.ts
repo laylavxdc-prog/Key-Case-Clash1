@@ -6,29 +6,22 @@ import crypto from "crypto";
 
 const router: IRouter = Router();
 
-function hashPassword(password: string): string {
+export function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password + "knifecase_salt_2024").digest("hex");
 }
 
 router.post("/register", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password required" });
-  }
-  if (username.length < 3) {
-    return res.status(400).json({ error: "Username must be at least 3 characters" });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters" });
-  }
+  if (!username || !password) return res.status(400).json({ error: "Username and password required" });
+  if (username.length < 3) return res.status(400).json({ error: "Username must be at least 3 characters" });
+  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (username.toLowerCase() === "admin") return res.status(400).json({ error: "Username not available" });
   try {
     const existing = await db.select().from(usersTable).where(eq(usersTable.username, username));
-    if (existing.length > 0) {
-      return res.status(400).json({ error: "Username already taken" });
-    }
+    if (existing.length > 0) return res.status(400).json({ error: "Username already taken" });
     const hashed = hashPassword(password);
     const [user] = await db.insert(usersTable).values({ username, password: hashed }).returning();
-    return res.json({ success: true, user: { id: user.id, username: user.username, keys: user.keys } });
+    return res.json({ success: true, user: { id: user.id, username: user.username, keys: user.keys, isAdmin: user.isAdmin } });
   } catch (err) {
     req.log.error({ err }, "Register error");
     return res.status(500).json({ error: "Server error" });
@@ -37,16 +30,12 @@ router.post("/register", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password required" });
-  }
+  if (!username || !password) return res.status(400).json({ error: "Username and password required" });
   try {
     const hashed = hashPassword(password);
     const [user] = await db.select().from(usersTable).where(eq(usersTable.username, username));
-    if (!user || user.password !== hashed) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-    return res.json({ success: true, user: { id: user.id, username: user.username, keys: user.keys } });
+    if (!user || user.password !== hashed) return res.status(401).json({ error: "Invalid username or password" });
+    return res.json({ success: true, user: { id: user.id, username: user.username, keys: user.keys, isAdmin: user.isAdmin } });
   } catch (err) {
     req.log.error({ err }, "Login error");
     return res.status(500).json({ error: "Server error" });
@@ -59,7 +48,7 @@ router.get("/user/:id", async (req, res) => {
   try {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id));
     if (!user) return res.status(404).json({ error: "User not found" });
-    return res.json({ id: user.id, username: user.username, keys: user.keys });
+    return res.json({ id: user.id, username: user.username, keys: user.keys, isAdmin: user.isAdmin });
   } catch (err) {
     req.log.error({ err }, "Get user error");
     return res.status(500).json({ error: "Server error" });
