@@ -384,7 +384,7 @@ function playKeysReceivedSound() {
 }
 function scheduleTickSounds() {
   // First tick plays immediately at t=0
-  const DURATION = 6000;
+  const DURATION = 10000;
   let t = 0, interval = 28;
   while (t < DURATION - 100) {
     const vol = Math.max(0.015, 0.07 - (t / DURATION) * 0.055);
@@ -441,7 +441,7 @@ async function openCase() {
   const endX  = startX - WINNER_IDX * ITEM_TOTAL;
   const nudge = Math.floor(Math.random() * 30) - 15;
   const strip = document.getElementById('reel-strip');
-  strip.style.transition = 'transform 6s cubic-bezier(0.12, 0.85, 0.25, 1)';
+  strip.style.transition = 'transform 10s cubic-bezier(0.08, 0.9, 0.22, 1)';
   strip.style.transform  = `translateX(${endX + nudge}px)`;
 
   setTimeout(() => {
@@ -454,7 +454,7 @@ async function openCase() {
       btn.disabled = false;
       btn.innerHTML = '<span class="spin-icon">⚡</span> OPEN CASE';
     }, 700);
-  }, 6100);
+  }, 10100);
 }
 
 /* ═══════════════════════════════════════
@@ -551,7 +551,7 @@ async function withdraw() {
     await saveProfile(currentProfile);
 
     playWithdrawSound();
-    showWithdrawModal(toWithdraw, totalVal);
+    showWithdrawModal();
 
     selectedItemIds.clear();
     renderInventory();
@@ -563,18 +563,7 @@ async function withdraw() {
   }
 }
 
-function showWithdrawModal(items, totalVal) {
-  document.getElementById('wd-items').innerHTML = items.map(i => `
-    <div class="wd-item rarity-${i.rarity}">
-      <img src="${i.image}" alt="${i.name}" />
-      <div class="wd-item-info">
-        <div class="wd-item-name">${i.name}</div>
-        <div class="rarity-badge ${i.rarity}" style="font-size:9px;padding:2px 8px;">${i.rarity}</div>
-      </div>
-      <div class="wd-item-val">🪙 ${i.value}</div>
-    </div>
-  `).join('');
-  document.getElementById('wd-total').textContent = `Total: ${totalVal} 🪙 coins sent to Discord`;
+function showWithdrawModal() {
   document.getElementById('withdraw-modal').classList.remove('hidden');
 }
 function closeWithdrawModal() { document.getElementById('withdraw-modal').classList.add('hidden'); }

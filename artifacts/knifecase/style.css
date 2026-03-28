@@ -289,8 +289,16 @@ body { background:var(--bg); color:var(--text); font-family:'Rajdhani',sans-seri
 .btn-claim:hover { transform:translateY(-2px); box-shadow:0 6px 24px rgba(224,53,53,0.5); }
 
 /* ══ WITHDRAW SUCCESS MODAL ══ */
-.wd-card { border-color:rgba(42,111,239,0.3) !important; max-width:420px; gap:10px; padding:36px 32px; }
-.wd-icon { font-size:48px; }
+.wd-card { border-color:rgba(42,111,239,0.3) !important; max-width:360px; gap:14px; padding:48px 36px; }
+.wd-check {
+  width:72px; height:72px; border-radius:50%;
+  background:linear-gradient(135deg,#20c060,#10e070);
+  display:flex; align-items:center; justify-content:center;
+  font-size:36px; color:#fff; font-weight:900;
+  box-shadow:0 0 32px rgba(32,192,96,0.5);
+  animation:checkPop .5s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes checkPop { from{transform:scale(0)} to{transform:scale(1)} }
 .wd-title {
   font-family:'Orbitron',sans-serif; font-size:22px; font-weight:900; letter-spacing:3px;
   background:linear-gradient(135deg,#2a6fef,#c084fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
