@@ -19,7 +19,6 @@
       <button id="atab-login" class="atab active" onclick="showAuthTab('login')">LOGIN</button>
       <button id="atab-register" class="atab" onclick="showAuthTab('register')">REGISTER</button>
     </div>
-
     <form id="login-form" class="aform" onsubmit="handleLogin(event)">
       <div class="field">
         <label>USERNAME</label>
@@ -32,7 +31,6 @@
       <div class="aerr" id="login-err"></div>
       <button type="submit" class="btn-auth">LOGIN</button>
     </form>
-
     <form id="register-form" class="aform hidden" onsubmit="handleRegister(event)">
       <div class="field">
         <label>USERNAME</label>
@@ -78,7 +76,7 @@
   <div id="tab-case" class="gtab">
     <div class="case-hero">
       <div class="case-hero-img-wrap">
-        <img src="case-killer.png" alt="Killer Case" class="case-hero-img" id="case-hero-img" />
+        <img src="case-killer.png" alt="Killer Case" class="case-hero-img" />
         <div class="case-hero-glow"></div>
       </div>
       <div class="case-hero-info">
@@ -88,7 +86,6 @@
       </div>
     </div>
 
-    <!-- SPINNING REEL -->
     <div class="reel-section">
       <div class="reel-frame">
         <div class="reel-center-line"></div>
@@ -107,9 +104,8 @@
       </div>
     </div>
 
-    <!-- POSSIBLE DROPS -->
     <div class="possible-section">
-      <h3 class="section-label">POSSIBLE DROPS — ALL EQUAL CHANCE (1 in 7)</h3>
+      <h3 class="section-label">POSSIBLE DROPS — WEIGHTED ODDS</h3>
       <div class="possible-grid" id="possible-grid"></div>
     </div>
   </div>
@@ -138,7 +134,6 @@
     <div class="admin-panel">
       <h2 class="section-label">🔑 ADMIN PANEL</h2>
       <p class="admin-desc">Add keys to any player's account.</p>
-
       <div class="admin-form">
         <div class="field">
           <label>PLAYER USERNAME</label>
@@ -152,7 +147,6 @@
         <div class="admin-success hidden" id="admin-success"></div>
         <button class="btn-auth" onclick="adminAddKeys()">ADD KEYS</button>
       </div>
-
       <div class="admin-log-section">
         <h3 class="section-label" style="font-size:13px;margin-top:32px;">RECENT ACTIONS</h3>
         <div id="admin-log" class="admin-log"></div>
@@ -176,6 +170,22 @@
     <button class="btn-claim" onclick="closeModal()">CLAIM ITEM</button>
   </div>
 </div>
+
+<!-- ═══════════════ WITHDRAW SUCCESS MODAL ═══════════════ -->
+<div id="withdraw-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeWithdrawModal()"></div>
+  <div class="modal-card wd-card">
+    <div class="wd-icon">📬</div>
+    <div class="wd-title">REQUEST SENT!</div>
+    <div class="wd-sub">Your items have been submitted to Discord for processing.</div>
+    <div id="wd-items" class="wd-items"></div>
+    <div id="wd-total" class="wd-total"></div>
+    <button class="btn-claim" onclick="closeWithdrawModal()">CLOSE</button>
+  </div>
+</div>
+
+<!-- ═══════════════ TOAST ═══════════════ -->
+<div id="toast" class="toast toast-hide"></div>
 
 <script src="script.js"></script>
 </body>

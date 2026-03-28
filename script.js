@@ -15,18 +15,19 @@ const FIREBASE_CONFIG = {
 const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1486783614388666448/yTR9D5E-hSwzP2Yn2am1ig81dWMDrDpCzlS-yXTTH_OrX3xvw-j4C4QDWuSgk9FFpBDN';
 
 // Hardcoded admin usernames — add any username here to grant instant admin access.
-// These accounts get the Admin tab automatically regardless of Firestore settings.
 const ADMIN_USERNAMES = ['idek', 'admin'];
 
+// Weighted knife chances. Must add up to 100.
 const KNIVES = [
-  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png' },
-  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png' },
-  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  image: 'knife-crimson.png' },
-  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  image: 'knife-shadow.png' },
-  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  image: 'knife-golden.png' },
-  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  image: 'knife-void.png' },
-  { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png' },
+  { name: 'Rusty Knife',     rarity: 'common',    value: 5,   image: 'knife-rusty.png',     chance: 40 },
+  { name: 'Forest Blade',    rarity: 'uncommon',  value: 15,  image: 'knife-forest.png',    chance: 25 },
+  { name: 'Crimson Edge',    rarity: 'rare',      value: 25,  image: 'knife-crimson.png',   chance: 18 },
+  { name: 'Shadow Cutter',   rarity: 'epic',      value: 40,  image: 'knife-shadow.png',    chance: 10 },
+  { name: 'Golden Blade',    rarity: 'legendary', value: 60,  image: 'knife-golden.png',    chance: 5  },
+  { name: 'Void Dagger',     rarity: 'mythical',  value: 80,  image: 'knife-void.png',      chance: 1.5},
+  { name: 'Celestial Knife', rarity: 'celestial', value: 100, image: 'knife-celestial.png', chance: 0.5},
 ];
+const TOTAL_CHANCE = KNIVES.reduce((s, k) => s + k.chance, 0); // = 100
 
 const ITEM_W       = 110;
 const ITEM_GAP     = 10;
@@ -34,16 +35,17 @@ const ITEM_TOTAL   = ITEM_W + ITEM_GAP;
 const STRIP_COUNT  = 60;
 const WINNER_IDX   = 45;
 const CASE_COST    = 10;
-const STARTER_KEYS = 0;   // All new accounts start with 0 keys. Admins add keys.
+const STARTER_KEYS = 0;
 
 /* ═══════════════════════════════════════
    STATE
 ═══════════════════════════════════════ */
-let currentUser     = null;
-let currentProfile  = null;
-let isSpinning      = false;
-let selectedItemIds = new Set();
-let adminLog        = [];
+let currentUser          = null;
+let currentProfile       = null;
+let isSpinning           = false;
+let selectedItemIds      = new Set();
+let adminLog             = [];
+let unsubscribeProfile   = null;  // Firestore real-time listener
 
 /* ═══════════════════════════════════════
    FIREBASE — lazy dynamic import
@@ -79,6 +81,26 @@ async function saveProfile(profile) {
   await setDoc(doc(db, 'users', profile.username), profile);
 }
 
+// Real-time listener so balance updates without refreshing
+async function startProfileListener(username) {
+  const { db, storeMod: { doc, onSnapshot } } = await getFirebase();
+  if (unsubscribeProfile) unsubscribeProfile();
+  unsubscribeProfile = onSnapshot(doc(db, 'users', username), (snap) => {
+    if (!snap.exists() || !currentProfile) return;
+    const data = snap.data();
+    const newKeys = data.keys ?? 0;
+    // If keys went up externally (admin added keys), play sound + toast
+    if (newKeys > (currentProfile.keys || 0)) {
+      const added = newKeys - (currentProfile.keys || 0);
+      playKeysReceivedSound();
+      showToast(`🗝️ +${added} keys added to your account!`, 'success');
+    }
+    currentProfile.keys      = newKeys;
+    currentProfile.inventory = data.inventory || currentProfile.inventory;
+    updateKeysDisplay(newKeys);
+  });
+}
+
 /* ═══════════════════════════════════════
    AUTH HELPERS
 ═══════════════════════════════════════ */
@@ -105,17 +127,14 @@ async function handleLogin(e) {
   const errEl    = document.getElementById('login-err');
   errEl.textContent = '';
   const btn = document.querySelector('#login-form .btn-auth');
-  btn.disabled = true;
-  btn.textContent = 'LOGGING IN...';
+  btn.disabled = true; btn.textContent = 'LOGGING IN...';
   try {
     const { auth, authMod: { signInWithEmailAndPassword } } = await getFirebase();
     await signInWithEmailAndPassword(auth, toEmail(username), password);
   } catch(err) {
     errEl.textContent = friendlyAuthError(err.code);
-    console.error(err);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'LOGIN';
+    btn.disabled = false; btn.textContent = 'LOGIN';
   }
 }
 
@@ -128,29 +147,20 @@ async function handleRegister(e) {
   if (username.length < 3) { errEl.textContent = 'Username must be 3+ characters.'; return; }
   if (password.length < 6) { errEl.textContent = 'Password must be 6+ characters.'; return; }
   const btn = document.querySelector('#register-form .btn-auth');
-  btn.disabled = true;
-  btn.textContent = 'CREATING...';
+  btn.disabled = true; btn.textContent = 'CREATING...';
   try {
     const { auth, authMod: { createUserWithEmailAndPassword } } = await getFirebase();
-
-    // Check username not taken
     const existing = await getProfile(username);
     if (existing) { errEl.textContent = 'Username already taken.'; return; }
-
-    // Save the Firestore profile FIRST — before creating the auth user.
-    // This way when onAuthStateChanged fires it finds the profile immediately.
-    const profile = { username, keys: STARTER_KEYS, inventory: [], isAdmin: false };
-    await saveProfile(profile);
-
-    // Now create the Firebase Auth account
+    // Save profile FIRST so onAuthStateChanged finds it immediately
+    const isAdminUser = ADMIN_USERNAMES.includes(username.toLowerCase());
+    await saveProfile({ username, keys: STARTER_KEYS, inventory: [], isAdmin: isAdminUser });
     await createUserWithEmailAndPassword(auth, toEmail(username), password);
-    // onAuthStateChanged takes over from here
   } catch(err) {
     errEl.textContent = friendlyAuthError(err.code);
     console.error(err);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'CREATE ACCOUNT';
+    btn.disabled = false; btn.textContent = 'CREATE ACCOUNT';
   }
 }
 
@@ -168,13 +178,11 @@ function friendlyAuthError(code) {
 }
 
 async function logout() {
+  if (unsubscribeProfile) { unsubscribeProfile(); unsubscribeProfile = null; }
   const { auth, authMod: { signOut } } = await getFirebase();
   await signOut(auth);
-  currentUser    = null;
-  currentProfile = null;
-  isSpinning     = false;
-  selectedItemIds.clear();
-  adminLog = [];
+  currentUser = null; currentProfile = null;
+  isSpinning = false; selectedItemIds.clear(); adminLog = [];
   document.getElementById('game-screen').classList.add('hidden');
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('login-user').value = '';
@@ -184,7 +192,7 @@ async function logout() {
 }
 
 /* ═══════════════════════════════════════
-   GAME INIT (called after auth)
+   GAME INIT
 ═══════════════════════════════════════ */
 async function onUserLoggedIn(firebaseUser) {
   currentUser = firebaseUser;
@@ -192,44 +200,34 @@ async function onUserLoggedIn(firebaseUser) {
 
   let profile = await getProfile(username);
   if (!profile) {
-    // Fallback: profile wasn't pre-created (edge case), create it now
     profile = { username, keys: STARTER_KEYS, inventory: [], isAdmin: false };
     await saveProfile(profile);
   }
 
-  // Grant admin if username is in the hardcoded list OR Firestore flag is set.
-  // This means you never need to touch Firestore manually — just add to ADMIN_USERNAMES above.
   const isAdmin = ADMIN_USERNAMES.includes(username.toLowerCase()) || profile.isAdmin === true;
-
-  // If the user is a hardcoded admin but their Firestore doc doesn't reflect it yet, fix it now.
   if (isAdmin && !profile.isAdmin) {
     profile.isAdmin = true;
     await saveProfile(profile);
-    console.log('Admin flag synced to Firestore for:', username);
   }
-
   profile.isAdmin = isAdmin;
   currentProfile  = profile;
-
-  console.log('Logged in:', username, '| Keys:', profile.keys, '| Admin:', isAdmin, '| Firestore isAdmin:', profile.isAdmin);
 
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('game-screen').classList.remove('hidden');
   document.getElementById('username-display').textContent = username;
   updateKeysDisplay(profile.keys);
 
-  // Show admin tab only for admins
   const adminBtn = document.getElementById('ntab-admin');
-  if (isAdmin) {
-    adminBtn.classList.remove('hidden');
-    console.log('Admin panel unlocked for:', username);
-  } else {
-    adminBtn.classList.add('hidden');
-  }
+  isAdmin ? adminBtn.classList.remove('hidden') : adminBtn.classList.add('hidden');
 
   initPossibleDrops();
   buildInitialReel();
   switchTab('case');
+
+  // Start real-time listener AFTER showing the game
+  startProfileListener(username);
+
+  console.log('Logged in:', username, '| Keys:', profile.keys, '| Admin:', isAdmin);
 }
 
 function updateKeysDisplay(keys) {
@@ -252,6 +250,19 @@ function switchTab(tab) {
 }
 
 /* ═══════════════════════════════════════
+   TOAST NOTIFICATION
+═══════════════════════════════════════ */
+let toastTimer = null;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `toast toast-${type || 'info'}`;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast toast-hide'; }, 3200);
+}
+
+/* ═══════════════════════════════════════
    POSSIBLE DROPS
 ═══════════════════════════════════════ */
 function initPossibleDrops() {
@@ -262,18 +273,26 @@ function initPossibleDrops() {
       <div class="iname">${k.name}</div>
       <div class="ival">🪙 ${k.value}</div>
       <div class="rarity-badge ${k.rarity}">${k.rarity}</div>
+      <div class="drop-chance">${k.chance}%</div>
     </div>
   `).join('');
 }
 
 /* ═══════════════════════════════════════
-   REEL
+   WEIGHTED RANDOM KNIFE
 ═══════════════════════════════════════ */
 function randomKnife() {
-  // Perfectly fair: each of the 7 knives has exactly 1/7 chance
-  return KNIVES[Math.floor(Math.random() * KNIVES.length)];
+  let r = Math.random() * TOTAL_CHANCE;
+  for (const knife of KNIVES) {
+    r -= knife.chance;
+    if (r <= 0) return knife;
+  }
+  return KNIVES[KNIVES.length - 1];
 }
 
+/* ═══════════════════════════════════════
+   REEL
+═══════════════════════════════════════ */
 function buildReel(winner) {
   const strip    = document.getElementById('reel-strip');
   const viewport = document.getElementById('reel-viewport');
@@ -313,6 +332,7 @@ function buildInitialReel() {
 let audioCtx = null;
 function getCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
 function osc(freq, type, start, duration, volume, ctx) {
@@ -324,8 +344,7 @@ function osc(freq, type, start, duration, volume, ctx) {
   g.gain.setValueAtTime(0, start);
   g.gain.linearRampToValueAtTime(volume, start + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  o.start(start);
-  o.stop(start + duration + 0.01);
+  o.start(start); o.stop(start + duration + 0.01);
 }
 function playTick(vol) {
   try { const ctx = getCtx(); osc(800, 'square', ctx.currentTime, 0.04, vol || 0.06, ctx); } catch(e) {}
@@ -346,12 +365,31 @@ function playWinSound(rarity) {
     notes.forEach((f, i) => osc(f, 'sine', ctx.currentTime + i * 0.13, 0.45, 0.18, ctx));
   } catch(e) {}
 }
+function playWithdrawSound() {
+  try {
+    const ctx = getCtx();
+    const t = ctx.currentTime;
+    osc(330, 'sine', t,        0.15, 0.12, ctx);
+    osc(440, 'sine', t + 0.1,  0.18, 0.14, ctx);
+    osc(660, 'sine', t + 0.22, 0.25, 0.16, ctx);
+    osc(880, 'sine', t + 0.35, 0.3,  0.18, ctx);
+  } catch(e) {}
+}
+function playKeysReceivedSound() {
+  try {
+    const ctx = getCtx();
+    const t = ctx.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => osc(f, 'sine', t + i * 0.08, 0.3, 0.15, ctx));
+  } catch(e) {}
+}
 function scheduleTickSounds() {
+  // First tick plays immediately at t=0
   const DURATION = 6000;
   let t = 0, interval = 28;
   while (t < DURATION - 100) {
     const vol = Math.max(0.015, 0.07 - (t / DURATION) * 0.055);
-    setTimeout(() => playTick(vol), t);
+    const delay = t;
+    setTimeout(() => playTick(vol), delay);
     interval = Math.min(interval * 1.075, 420);
     t += interval;
   }
@@ -363,7 +401,7 @@ function scheduleTickSounds() {
 async function openCase() {
   if (isSpinning || !currentProfile) return;
   if (currentProfile.keys < CASE_COST) {
-    alert("You don't have enough keys! Ask an admin to add keys to your account.");
+    showToast("Not enough keys! Ask an admin to top you up.", 'error');
     return;
   }
 
@@ -371,6 +409,9 @@ async function openCase() {
   const btn  = document.getElementById('open-btn');
   btn.disabled = true;
   btn.textContent = 'SPINNING...';
+
+  // Wake audio context immediately on user tap (important on mobile)
+  try { getCtx(); } catch(e) {}
 
   const winner = randomKnife();
 
@@ -388,18 +429,20 @@ async function openCase() {
   try {
     await saveProfile(currentProfile);
   } catch(err) {
-    console.error('Failed to save to Firestore:', err);
+    console.error('Failed to save:', err);
   }
 
   const startX = buildReel(winner);
-  document.getElementById('reel-strip').offsetHeight;
+  document.getElementById('reel-strip').offsetHeight; // force reflow
+
+  // Start sounds IMMEDIATELY before animation
+  scheduleTickSounds();
+
   const endX  = startX - WINNER_IDX * ITEM_TOTAL;
   const nudge = Math.floor(Math.random() * 30) - 15;
   const strip = document.getElementById('reel-strip');
   strip.style.transition = 'transform 6s cubic-bezier(0.12, 0.85, 0.25, 1)';
   strip.style.transform  = `translateX(${endX + nudge}px)`;
-
-  scheduleTickSounds();
 
   setTimeout(() => {
     const items = strip.querySelectorAll('.ri');
@@ -429,10 +472,7 @@ function showWinModal(knife) {
   document.getElementById('modal-glow').className = `modal-glow ${knife.rarity}`;
   document.getElementById('win-modal').classList.remove('hidden');
 }
-
-function closeModal() {
-  document.getElementById('win-modal').classList.add('hidden');
-}
+function closeModal() { document.getElementById('win-modal').classList.add('hidden'); }
 
 /* ═══════════════════════════════════════
    INVENTORY
@@ -440,17 +480,13 @@ function closeModal() {
 function renderInventory() {
   selectedItemIds.clear();
   updateWithdrawBar();
-
   const grid = document.getElementById('inventory-grid');
   const inv  = currentProfile?.inventory || [];
-  document.getElementById('inv-total-count').textContent =
-    `${inv.length} item${inv.length !== 1 ? 's' : ''}`;
-
+  document.getElementById('inv-total-count').textContent = `${inv.length} item${inv.length !== 1 ? 's' : ''}`;
   if (inv.length === 0) {
     grid.innerHTML = '<div class="empty-msg">No items yet. Open a case to get started!</div>';
     return;
   }
-
   grid.innerHTML = inv.slice().reverse().map(item => `
     <div class="icard inv-item rarity-${item.rarity}" data-id="${item.id}" data-val="${item.value}" onclick="toggleItem(this)">
       <div class="sel-overlay"><span class="sel-check">✓</span></div>
@@ -464,34 +500,28 @@ function renderInventory() {
 
 function toggleItem(el) {
   const id = Number(el.dataset.id);
-  if (selectedItemIds.has(id)) {
-    selectedItemIds.delete(id);
-    el.classList.remove('selected');
-  } else {
-    selectedItemIds.add(id);
-    el.classList.add('selected');
-  }
+  if (selectedItemIds.has(id)) { selectedItemIds.delete(id); el.classList.remove('selected'); }
+  else                         { selectedItemIds.add(id);    el.classList.add('selected'); }
   updateWithdrawBar();
 }
 
 function updateWithdrawBar() {
   const bar   = document.getElementById('withdraw-bar');
   const count = selectedItemIds.size;
-  const total = (currentProfile?.inventory || [])
-    .filter(i => selectedItemIds.has(i.id))
-    .reduce((s, i) => s + i.value, 0);
+  const total = (currentProfile?.inventory || []).filter(i => selectedItemIds.has(i.id)).reduce((s, i) => s + i.value, 0);
   document.getElementById('sel-count').textContent = `${count} selected`;
   document.getElementById('sel-value').textContent = `${total} 🪙`;
   bar.classList.toggle('hidden', count === 0);
 }
 
+/* ═══════════════════════════════════════
+   WITHDRAW
+═══════════════════════════════════════ */
 async function withdraw() {
   if (selectedItemIds.size === 0 || !currentProfile) return;
   const toWithdraw = currentProfile.inventory.filter(i => selectedItemIds.has(i.id));
-
   const btn = document.getElementById('withdraw-btn');
-  btn.disabled = true;
-  btn.textContent = 'SENDING...';
+  btn.disabled = true; btn.textContent = 'SENDING...';
 
   const totalVal = toWithdraw.reduce((s, i) => s + i.value, 0);
   const fields   = toWithdraw.map(i => ({
@@ -516,72 +546,70 @@ async function withdraw() {
     });
     if (!res.ok) throw new Error(`Discord ${res.status}`);
 
+    // Remove from inventory
     currentProfile.inventory = currentProfile.inventory.filter(i => !selectedItemIds.has(i.id));
     await saveProfile(currentProfile);
+
+    playWithdrawSound();
+    showWithdrawModal(toWithdraw, totalVal);
+
     selectedItemIds.clear();
     renderInventory();
-    alert(`✅ Withdrawal sent! ${toWithdraw.length} item(s) submitted.`);
   } catch(err) {
     console.error('Withdraw failed:', err);
-    alert('❌ Withdrawal failed. Try again.');
+    showToast('❌ Withdrawal failed. Try again.', 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🎮 WITHDRAW';
+    btn.disabled = false; btn.textContent = '🎮 WITHDRAW';
   }
 }
+
+function showWithdrawModal(items, totalVal) {
+  document.getElementById('wd-items').innerHTML = items.map(i => `
+    <div class="wd-item rarity-${i.rarity}">
+      <img src="${i.image}" alt="${i.name}" />
+      <div class="wd-item-info">
+        <div class="wd-item-name">${i.name}</div>
+        <div class="rarity-badge ${i.rarity}" style="font-size:9px;padding:2px 8px;">${i.rarity}</div>
+      </div>
+      <div class="wd-item-val">🪙 ${i.value}</div>
+    </div>
+  `).join('');
+  document.getElementById('wd-total').textContent = `Total: ${totalVal} 🪙 coins sent to Discord`;
+  document.getElementById('withdraw-modal').classList.remove('hidden');
+}
+function closeWithdrawModal() { document.getElementById('withdraw-modal').classList.add('hidden'); }
 
 /* ═══════════════════════════════════════
    ADMIN
 ═══════════════════════════════════════ */
 async function adminAddKeys() {
   if (!currentProfile?.isAdmin) return;
-
   const targetUser = document.getElementById('admin-target-user').value.trim().toLowerCase();
   const amount     = parseInt(document.getElementById('admin-keys-amount').value, 10);
   const errEl      = document.getElementById('admin-err');
   const successEl  = document.getElementById('admin-success');
-
-  errEl.textContent = '';
-  successEl.classList.add('hidden');
-
+  errEl.textContent = ''; successEl.classList.add('hidden');
   if (!targetUser) { errEl.textContent = 'Enter a username.'; return; }
   if (!amount || amount < 1) { errEl.textContent = 'Enter a valid number of keys (min 1).'; return; }
-
   const btn = document.querySelector('#tab-admin .btn-auth');
-  btn.disabled = true;
-  btn.textContent = 'ADDING...';
-
+  btn.disabled = true; btn.textContent = 'ADDING...';
   try {
     const profile = await getProfile(targetUser);
-    if (!profile) {
-      errEl.textContent = `User "${targetUser}" not found.`;
-      return;
-    }
-
+    if (!profile) { errEl.textContent = `User "${targetUser}" not found.`; return; }
     profile.keys = (profile.keys || 0) + amount;
     await saveProfile(profile);
-
-    const entry = {
-      time:   new Date().toLocaleString(),
-      admin:  currentProfile.username,
-      target: targetUser,
-      amount,
-      newTotal: profile.keys,
-    };
+    const entry = { time: new Date().toLocaleString(), admin: currentProfile.username, target: targetUser, amount, newTotal: profile.keys };
     adminLog.unshift(entry);
-
     successEl.textContent = `✅ Added ${amount} keys to ${targetUser}. They now have ${profile.keys} keys.`;
     successEl.classList.remove('hidden');
-    document.getElementById('admin-target-user').value  = '';
-    document.getElementById('admin-keys-amount').value  = '';
+    document.getElementById('admin-target-user').value = '';
+    document.getElementById('admin-keys-amount').value = '';
     renderAdminLog();
-    console.log('Admin added keys:', entry);
   } catch(err) {
     errEl.textContent = 'Failed to add keys. Try again.';
     console.error(err);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'ADD KEYS';
+    btn.disabled = false; btn.textContent = 'ADD KEYS';
   }
 }
 
@@ -605,15 +633,12 @@ function renderAdminLog() {
 ═══════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   showAuthTab('login');
-
   const { auth, authMod: { onAuthStateChanged } } = await getFirebase();
-
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       await onUserLoggedIn(user);
     } else {
-      currentUser    = null;
-      currentProfile = null;
+      currentUser = null; currentProfile = null;
       document.getElementById('game-screen').classList.add('hidden');
       document.getElementById('auth-screen').classList.remove('hidden');
     }
